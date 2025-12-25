@@ -21,8 +21,8 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="DiscoverTab"
       screenOptions={{
-        tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.tabIconDefault,
+        tabBarActiveTintColor: '#6F4E37',
+        tabBarInactiveTintColor: '#5A4535',
         tabBarStyle: {
           position: 'absolute',
           bottom: Platform.OS === 'web' ? 16 : 0,
@@ -46,8 +46,9 @@ export default function MainTabNavigator() {
           <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FAF7F4' }]} />
         ),
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
+          fontSize: 13,
+          fontWeight: '700',
+          color: '#4A3728',
         },
         headerShown: false,
       }}

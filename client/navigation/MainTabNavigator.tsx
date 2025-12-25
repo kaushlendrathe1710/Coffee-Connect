@@ -1,4 +1,5 @@
 import React from 'react';
+import { Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 import { MainTabParamList } from '@/types/navigation';
@@ -16,24 +17,19 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="DiscoverTab"
       screenOptions={{
-        tabBarActiveTintColor: '#4A3020',
-        tabBarInactiveTintColor: '#2C1810',
+        tabBarActiveTintColor: '#3D2817',
+        tabBarInactiveTintColor: '#1A0F08',
         tabBarStyle: {
           backgroundColor: '#FFF8F0',
           borderTopWidth: 2,
           borderTopColor: '#6F4E37',
-          height: 70,
-          paddingBottom: 10,
-          paddingTop: 10,
+          height: 65,
+          paddingBottom: 8,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: '700',
-          marginTop: 4,
-        },
-        tabBarShowLabel: true,
-        tabBarIconStyle: {
-          marginBottom: -4,
         },
         headerShown: false,
       }}
@@ -42,9 +38,11 @@ export default function MainTabNavigator() {
         name="DiscoverTab"
         component={DiscoverScreen}
         options={{
-          title: 'Discover',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="compass" size={size} color={color} />
+          tabBarLabel: ({ focused }) => (
+            <Text style={{ color: focused ? '#6F4E37' : '#000000', fontSize: 11, fontWeight: '600' }}>Discover</Text>
+          ),
+          tabBarIcon: ({ focused }) => (
+            <Feather name="compass" size={22} color={focused ? '#6F4E37' : '#000000'} />
           ),
         }}
       />
@@ -52,9 +50,11 @@ export default function MainTabNavigator() {
         name="MatchesTab"
         component={MatchesScreen}
         options={{
-          title: 'Matches',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="heart" size={size} color={color} />
+          tabBarLabel: ({ focused }) => (
+            <Text style={{ color: focused ? '#6F4E37' : '#000000', fontSize: 11, fontWeight: '600' }}>Matches</Text>
+          ),
+          tabBarIcon: ({ focused }) => (
+            <Feather name="heart" size={22} color={focused ? '#6F4E37' : '#000000'} />
           ),
         }}
       />
@@ -62,9 +62,11 @@ export default function MainTabNavigator() {
         name="CalendarTab"
         component={CalendarScreen}
         options={{
-          title: 'Dates',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="calendar" size={size} color={color} />
+          tabBarLabel: ({ focused }) => (
+            <Text style={{ color: focused ? '#6F4E37' : '#000000', fontSize: 11, fontWeight: '600' }}>Dates</Text>
+          ),
+          tabBarIcon: ({ focused }) => (
+            <Feather name="calendar" size={22} color={focused ? '#6F4E37' : '#000000'} />
           ),
         }}
       />
@@ -72,9 +74,11 @@ export default function MainTabNavigator() {
         name="ProfileTab"
         component={ProfileScreen}
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="user" size={size} color={color} />
+          tabBarLabel: ({ focused }) => (
+            <Text style={{ color: focused ? '#6F4E37' : '#000000', fontSize: 11, fontWeight: '600' }}>Profile</Text>
+          ),
+          tabBarIcon: ({ focused }) => (
+            <Feather name="user" size={22} color={focused ? '#6F4E37' : '#000000'} />
           ),
         }}
       />

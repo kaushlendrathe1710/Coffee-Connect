@@ -40,10 +40,7 @@ export default function EmailInputScreen() {
     setError('');
 
     try {
-      await apiRequest('/api/auth/send-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email: email.toLowerCase().trim() }),
-      });
+      await apiRequest('POST', '/api/auth/send-otp', { email: email.toLowerCase().trim() });
 
       navigation.navigate('OTPVerification', { email: email.toLowerCase().trim() });
     } catch (err: any) {

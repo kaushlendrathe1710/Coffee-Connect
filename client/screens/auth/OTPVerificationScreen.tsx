@@ -86,12 +86,9 @@ export default function OTPVerificationScreen() {
     setError('');
 
     try {
-      const response = await apiRequest('/api/auth/verify-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email, code: otp.join('') }),
-      });
+      const response = await apiRequest('POST', '/api/auth/verify-otp', { email, code: otp.join('') });
 
-      const data = await response;
+      const data = await response.json();
 
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -135,10 +132,7 @@ export default function OTPVerificationScreen() {
     }
 
     try {
-      await apiRequest('/api/auth/send-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      });
+      await apiRequest('POST', '/api/auth/send-otp', { email });
       setResendCountdown(60);
       setOtp(Array(OTP_LENGTH).fill(''));
       setError('');

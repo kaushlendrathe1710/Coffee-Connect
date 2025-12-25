@@ -14,6 +14,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'ProfileSetup'>;
 type ProfileSetupRouteProp = RouteProp<AuthStackParamList, 'ProfileSetup'>;
@@ -23,6 +24,7 @@ export default function ProfileSetupScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ProfileSetupRouteProp>();
   const { theme } = useTheme();
+  const { updateUser } = useAuth();
   const role = route.params.role;
 
   const [name, setName] = useState('');
@@ -50,7 +52,7 @@ export default function ProfileSetupScreen() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!isValid) {
       setShowErrors(true);
       if (Platform.OS !== 'web') {
@@ -61,6 +63,14 @@ export default function ProfileSetupScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    // Save profile data to AuthContext
+    await updateUser({
+      name: name.trim(),
+      age: parseInt(age),
+      gender,
+      bio: bio.trim(),
+      photos,
+    });
     navigation.navigate('CoffeePreferences');
   };
 

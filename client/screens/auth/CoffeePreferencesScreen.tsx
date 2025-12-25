@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, CoffeePreferences } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'CoffeePreferences'>;
 
@@ -18,6 +19,7 @@ export default function CoffeePreferencesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
+  const { updateUser } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
 
   const toggleSelection = (item: string) => {
@@ -29,11 +31,13 @@ export default function CoffeePreferencesScreen() {
     );
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selected.length === 0) return;
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    // Save coffee preferences to AuthContext
+    await updateUser({ coffeePreferences: selected });
     navigation.navigate('InterestsSelection');
   };
 

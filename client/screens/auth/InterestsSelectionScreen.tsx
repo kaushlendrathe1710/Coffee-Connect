@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, InterestTags } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'InterestsSelection'>;
 
@@ -18,6 +19,7 @@ export default function InterestsSelectionScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
+  const { updateUser } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
 
   const toggleSelection = (item: string) => {
@@ -29,11 +31,13 @@ export default function InterestsSelectionScreen() {
     );
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selected.length < 3) return;
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    // Save interests to AuthContext
+    await updateUser({ interests: selected });
     navigation.navigate('LocationPermission');
   };
 

@@ -11,7 +11,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
-import { UserRole } from '@/contexts/AuthContext';
+import { UserRole, useAuth } from '@/contexts/AuthContext';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'RoleSelection'>;
 
@@ -19,6 +19,7 @@ export default function RoleSelectionScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
+  const { updateUser } = useAuth();
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
 
   const handleSelectRole = (role: UserRole) => {
@@ -28,11 +29,13 @@ export default function RoleSelectionScreen() {
     setSelectedRole(role);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!selectedRole) return;
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    // Save role to AuthContext
+    await updateUser({ role: selectedRole });
     navigation.navigate('ProfileSetup', { role: selectedRole });
   };
 

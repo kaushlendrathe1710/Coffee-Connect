@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Platform, ScrollView, Linking } from 'react-native';
+import { View, StyleSheet, Pressable, Platform, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<AuthStackParamList, 'TermsConsent'>;
 
@@ -19,10 +20,11 @@ export default function TermsConsentScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
-  const { login, completeOnboarding } = useAuth();
+  const { user, updateUser, completeOnboarding } = useAuth();
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleToggleTerms = () => {
     if (Platform.OS !== 'web') {
@@ -40,32 +42,46 @@ export default function TermsConsentScreen() {
 
   const handleCreateAccount = async () => {
     if (!termsAccepted || !privacyAccepted) return;
+    if (!user?.id) {
+      setError('User session not found. Please restart the app.');
+      return;
+    }
+    
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     setIsLoading(true);
+    setError(null);
 
     try {
-      // Create a demo user profile (in real app, this would be from auth provider)
-      const demoUser = {
-        id: `user_${Date.now()}`,
-        name: 'Demo User',
-        age: 25,
-        gender: 'Other',
-        bio: 'Coffee enthusiast looking for great conversations.',
-        photos: [],
-        coffeePreferences: ['Latte', 'Cappuccino'],
-        interests: ['Travel', 'Reading', 'Music'],
-        availability: [],
-        role: 'guest' as const,
-        verified: false,
-        createdAt: new Date().toISOString(),
-      };
+      // Save all collected onboarding data to the database
+      const response = await apiRequest('PUT', `/api/users/${user.id}`, {
+        name: user.name,
+        age: user.age,
+        gender: user.gender,
+        bio: user.bio,
+        photos: user.photos,
+        role: user.role,
+        coffeePreferences: user.coffeePreferences,
+        interests: user.interests,
+        onboardingCompleted: true,
+      });
 
-      await login(demoUser);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save profile');
+      }
+
+      const updatedUser = await response.json();
+      
+      // Update local user state with server response
+      updateUser({ ...updatedUser, onboardingCompleted: true });
+      
+      // Complete onboarding flow
       await completeOnboarding();
-    } catch (error) {
-      console.error('Failed to create account:', error);
+    } catch (err) {
+      console.error('Failed to complete onboarding:', err);
+      setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setIsLoading(false);
     }
@@ -168,6 +184,9 @@ export default function TermsConsentScreen() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl, backgroundColor: theme.backgroundRoot }]}>
+        {error ? (
+          <ThemedText style={[styles.errorText, { color: theme.error }]}>{error}</ThemedText>
+        ) : null}
         <Pressable
           style={({ pressed }) => [
             styles.button,
@@ -182,7 +201,7 @@ export default function TermsConsentScreen() {
           <ThemedText
             style={[styles.buttonText, { color: isValid ? theme.buttonText : theme.textSecondary }]}
           >
-            {isLoading ? 'Creating account...' : 'Create Account'}
+            {isLoading ? 'Completing setup...' : 'Get Started'}
           </ThemedText>
         </Pressable>
       </View>
@@ -289,5 +308,10 @@ const styles = StyleSheet.create({
   buttonText: {
     ...Typography.body,
     fontWeight: '600',
+  },
+  errorText: {
+    ...Typography.small,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
 });

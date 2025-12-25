@@ -25,23 +25,27 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
           position: 'absolute',
-          backgroundColor: Platform.select({
-            ios: 'transparent',
-            android: theme.backgroundRoot,
-          }),
-          borderTopWidth: 0,
-          elevation: 0,
+          backgroundColor: theme.cardBackground,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
+          elevation: 8,
           height: Platform.OS === 'ios' ? 88 : 64,
           paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.sm,
           paddingTop: Spacing.sm,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
         },
         tabBarBackground: () =>
           Platform.OS === 'ios' ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.cardBackground }]}>
+              <BlurView
+                intensity={80}
+                tint={isDark ? 'dark' : 'light'}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
           ) : null,
         tabBarLabelStyle: {
           fontSize: 12,

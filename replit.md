@@ -115,6 +115,15 @@ assets/           # Images, fonts, icons
 - **expo-image**: Optimized image rendering
 
 ### Environment Variables Required
-- `DATABASE_URL`: PostgreSQL connection string
+- `NEON_DATABASE_URL`: External Neon PostgreSQL connection string (takes priority)
+- `DATABASE_URL`: Fallback PostgreSQL connection string
 - `EXPO_PUBLIC_DOMAIN`: Public domain for API requests
 - `SMTP_*`: Email configuration for OTP delivery
+
+## Recent Changes
+
+### December 2025
+- **Database**: Configured to use external Neon database via `NEON_DATABASE_URL`
+- **Bottom Navigation**: Fixed tab bar visibility with custom labels using explicit Text components with black (#000000) inactive color and coffee brown (#6F4E37) active color
+- **Onboarding Data Fix**: Fixed bug where user profile data was being overwritten with demo data. Each onboarding screen now properly saves user selections via AuthContext.updateUser(), with final database persistence on completion
+- **UI Improvements**: Tab bar uses cream background (#FFF8F0) with brown border (#6F4E37) for clear visibility

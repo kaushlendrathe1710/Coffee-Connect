@@ -1,6 +1,6 @@
 import { users, otpCodes, type User, type InsertUser, type OtpCode, type InsertOtp } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, lt } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -28,7 +28,7 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
-      .values({ ...insertUser, email: insertUser.email.toLowerCase() })
+      .values({ email: insertUser.email.toLowerCase() })
       .returning();
     return user;
   }
@@ -70,7 +70,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteExpiredOtps(): Promise<void> {
-    await db.delete(otpCodes).where(gt(new Date(), otpCodes.expiresAt));
+    await db.delete(otpCodes).where(lt(otpCodes.expiresAt, new Date()));
   }
 }
 

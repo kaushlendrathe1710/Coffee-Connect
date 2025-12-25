@@ -1,16 +1,16 @@
-import React from "react";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Feather } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { Platform, StyleSheet } from "react-native";
-import HomeStackNavigator from "@/navigation/HomeStackNavigator";
-import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
-import { useTheme } from "@/hooks/useTheme";
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { Platform, StyleSheet, View } from 'react-native';
+import { MainTabParamList } from '@/types/navigation';
+import { useTheme } from '@/hooks/useTheme';
+import { Spacing } from '@/constants/theme';
 
-export type MainTabParamList = {
-  HomeTab: undefined;
-  ProfileTab: undefined;
-};
+import DiscoverScreen from '@/screens/main/DiscoverScreen';
+import MatchesScreen from '@/screens/main/MatchesScreen';
+import CalendarScreen from '@/screens/main/CalendarScreen';
+import ProfileScreen from '@/screens/main/ProfileScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -19,45 +19,72 @@ export default function MainTabNavigator() {
 
   return (
     <Tab.Navigator
-      initialRouteName="HomeTab"
+      initialRouteName="DiscoverTab"
       screenOptions={{
-        tabBarActiveTintColor: theme.tabIconSelected,
+        tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
-          position: "absolute",
+          position: 'absolute',
           backgroundColor: Platform.select({
-            ios: "transparent",
+            ios: 'transparent',
             android: theme.backgroundRoot,
           }),
           borderTopWidth: 0,
           elevation: 0,
+          height: Platform.OS === 'ios' ? 88 : 64,
+          paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.sm,
+          paddingTop: Spacing.sm,
         },
         tabBarBackground: () =>
-          Platform.OS === "ios" ? (
+          Platform.OS === 'ios' ? (
             <BlurView
               intensity={100}
-              tint={isDark ? "dark" : "light"}
+              tint={isDark ? 'dark' : 'light'}
               style={StyleSheet.absoluteFill}
             />
           ) : null,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
         headerShown: false,
       }}
     >
       <Tab.Screen
-        name="HomeTab"
-        component={HomeStackNavigator}
+        name="DiscoverTab"
+        component={DiscoverScreen}
         options={{
-          title: "Home",
+          title: 'Discover',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="home" size={size} color={color} />
+            <Feather name="compass" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="MatchesTab"
+        component={MatchesScreen}
+        options={{
+          title: 'Matches',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="heart" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="CalendarTab"
+        component={CalendarScreen}
+        options={{
+          title: 'Dates',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="calendar" size={size} color={color} />
           ),
         }}
       />
       <Tab.Screen
         name="ProfileTab"
-        component={ProfileStackNavigator}
+        component={ProfileScreen}
         options={{
-          title: "Profile",
+          title: 'Profile',
           tabBarIcon: ({ color, size }) => (
             <Feather name="user" size={size} color={color} />
           ),

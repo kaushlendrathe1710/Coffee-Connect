@@ -38,24 +38,33 @@ export default function ProfileScreen() {
     navigation.navigate('Settings');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    Alert.alert('Log Out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await logout();
-          } catch (error) {
-            console.error('Logout failed:', error);
-          }
+      Alert.alert('Log Out', 'Are you sure you want to log out?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (error) {
+              console.error('Logout failed:', error);
+            }
+          },
         },
-      },
-    ]);
+      ]);
+    } else {
+      const confirmed = window.confirm('Are you sure you want to log out?');
+      if (confirmed) {
+        try {
+          await logout();
+        } catch (error) {
+          console.error('Logout failed:', error);
+        }
+      }
+    }
   };
 
   const menuItems = [

@@ -30,6 +30,7 @@ export default function ProfileSetupScreen() {
   const [gender, setGender] = useState<string>('');
   const [bio, setBio] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
 
   const handlePickImage = async (index: number) => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -50,11 +51,26 @@ export default function ProfileSetupScreen() {
   };
 
   const handleContinue = () => {
-    if (!name.trim() || !age || !gender || photos.length === 0) return;
+    if (!isValid) {
+      setShowErrors(true);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      return;
+    }
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     navigation.navigate('CoffeePreferences');
+  };
+
+  const getValidationMessage = () => {
+    if (photos.length === 0) return 'Please add at least one photo';
+    if (!name.trim()) return 'Please enter your name';
+    if (!age) return 'Please enter your age';
+    if (parseInt(age) < 18) return 'You must be 18 or older';
+    if (!gender) return 'Please select your gender';
+    return '';
   };
 
   const handleBack = () => {
@@ -211,16 +227,20 @@ export default function ProfileSetupScreen() {
       </KeyboardAwareScrollViewCompat>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl, backgroundColor: theme.backgroundRoot }]}>
+        {showErrors && !isValid ? (
+          <ThemedText style={[styles.errorText, { color: theme.error }]}>
+            {getValidationMessage()}
+          </ThemedText>
+        ) : null}
         <Pressable
           style={({ pressed }) => [
             styles.button,
             {
               backgroundColor: isValid ? theme.primary : theme.backgroundTertiary,
-              opacity: pressed && isValid ? 0.8 : 1,
+              opacity: pressed ? 0.8 : 1,
             },
           ]}
           onPress={handleContinue}
-          disabled={!isValid}
         >
           <ThemedText
             style={[styles.buttonText, { color: isValid ? theme.buttonText : theme.textSecondary }]}
@@ -372,5 +392,10 @@ const styles = StyleSheet.create({
   buttonText: {
     ...Typography.body,
     fontWeight: '600',
+  },
+  errorText: {
+    ...Typography.small,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
 });

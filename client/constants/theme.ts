@@ -8,7 +8,7 @@ export const Colors = {
     text: "#2C1810",
     textSecondary: "#6F5E53",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#9B8B7A",
+    tabIconDefault: "#6B5A4A",
     tabIconSelected: tintColorLight,
     link: "#6F4E37",
     primary: "#6F4E37",

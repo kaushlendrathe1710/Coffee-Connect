@@ -25,20 +25,20 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
           position: 'absolute',
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#E0D5CC',
-          elevation: 10,
+          backgroundColor: '#FAF7F4',
+          borderTopWidth: 2,
+          borderTopColor: '#C4B5A5',
+          elevation: 15,
           height: Platform.OS === 'ios' ? 88 : 64,
           paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.sm,
           paddingTop: Spacing.sm,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 12,
+          shadowColor: '#2C1810',
+          shadowOffset: { width: 0, height: -6 },
+          shadowOpacity: 0.2,
+          shadowRadius: 16,
         },
         tabBarBackground: () => (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FAF7F4' }]} />
         ),
         tabBarLabelStyle: {
           fontSize: 12,

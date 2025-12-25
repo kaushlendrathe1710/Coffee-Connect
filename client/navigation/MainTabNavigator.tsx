@@ -1,8 +1,8 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MainTabParamList } from '@/types/navigation';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing } from '@/constants/theme';
@@ -15,7 +15,8 @@ import ProfileScreen from '@/screens/main/ProfileScreen';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabNavigator() {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -25,32 +26,27 @@ export default function MainTabNavigator() {
         tabBarInactiveTintColor: '#5A4535',
         tabBarStyle: {
           position: 'absolute',
-          bottom: Platform.OS === 'web' ? 20 : 0,
-          left: Platform.OS === 'web' ? 20 : 0,
-          right: Platform.OS === 'web' ? 20 : 0,
+          bottom: Platform.OS === 'web' ? 24 : insets.bottom + 12,
+          left: Platform.OS === 'web' ? 20 : 12,
+          right: Platform.OS === 'web' ? 20 : 12,
           backgroundColor: '#FFFFFF',
-          borderTopWidth: Platform.OS === 'web' ? 0 : 2,
-          borderWidth: Platform.OS === 'web' ? 2 : 0,
+          borderWidth: 2,
           borderColor: '#8B7355',
-          borderRadius: Platform.OS === 'web' ? 24 : 0,
+          borderRadius: 24,
           elevation: 20,
-          height: Platform.OS === 'ios' ? 88 : 80,
-          paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.lg,
-          paddingTop: Spacing.md,
+          paddingBottom: Spacing.sm,
+          paddingTop: Spacing.sm,
           shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -8 },
-          shadowOpacity: 0.3,
-          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 12,
         },
         tabBarBackground: () => (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', borderRadius: Platform.OS === 'web' ? 24 : 0 }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', borderRadius: 24, overflow: 'hidden' }]} />
         ),
         tabBarLabelStyle: {
-          fontSize: 14,
-          fontWeight: '800',
-        },
-        tabBarIconStyle: {
-          marginBottom: 2,
+          fontSize: 12,
+          fontWeight: '700',
         },
         headerShown: false,
       }}

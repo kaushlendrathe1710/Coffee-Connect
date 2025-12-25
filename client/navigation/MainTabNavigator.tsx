@@ -1,11 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
-import { Platform, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MainTabParamList } from '@/types/navigation';
-import { useTheme } from '@/hooks/useTheme';
-import { Spacing } from '@/constants/theme';
 
 import DiscoverScreen from '@/screens/main/DiscoverScreen';
 import MatchesScreen from '@/screens/main/MatchesScreen';
@@ -15,8 +11,6 @@ import ProfileScreen from '@/screens/main/ProfileScreen';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabNavigator() {
-  const { theme } = useTheme();
-  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -25,28 +19,16 @@ export default function MainTabNavigator() {
         tabBarActiveTintColor: '#6F4E37',
         tabBarInactiveTintColor: '#5A4535',
         tabBarStyle: {
-          position: 'absolute',
-          bottom: Platform.OS === 'web' ? 24 : insets.bottom + 12,
-          left: Platform.OS === 'web' ? 20 : 12,
-          right: Platform.OS === 'web' ? 20 : 12,
           backgroundColor: '#FFFFFF',
-          borderWidth: 2,
-          borderColor: '#8B7355',
-          borderRadius: 24,
-          elevation: 20,
-          paddingBottom: Spacing.sm,
-          paddingTop: Spacing.sm,
-          shadowColor: '#000000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.2,
-          shadowRadius: 12,
+          borderTopWidth: 1,
+          borderTopColor: '#D4C4B5',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
         },
-        tabBarBackground: () => (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', borderRadius: 24, overflow: 'hidden' }]} />
-        ),
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '700',
+          fontSize: 11,
+          fontWeight: '600',
         },
         headerShown: false,
       }}

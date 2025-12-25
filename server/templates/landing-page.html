@@ -201,6 +201,32 @@
         opacity: 0.9;
       }
 
+      .login-section {
+        margin-top: 32px;
+        padding-top: 24px;
+        border-top: 1px solid #ddd;
+      }
+      .login-text {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 12px;
+      }
+      .login-button {
+        display: inline-block;
+        padding: 14px 32px;
+        font-size: 16px;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        text-decoration: none;
+        color: #fff;
+        background: #6F4E37;
+        transition: all 0.15s;
+      }
+      .login-button:hover {
+        background: #5a3f2d;
+      }
+
       /* Desktop styles */
       @media (min-width: 768px) {
         body {
@@ -325,6 +351,18 @@
         .open-button:hover {
           background: #e0e0e0;
         }
+        .login-section {
+          border-top-color: #333;
+        }
+        .login-text {
+          color: #888;
+        }
+        .login-button {
+          background: #8B6B4C;
+        }
+        .login-button:hover {
+          background: #6F4E37;
+        }
       }
     </style>
   </head>
@@ -389,6 +427,11 @@
               >Open in Expo Go</a
             >
           </div>
+        </div>
+
+        <div class="login-section">
+          <p class="login-text">Or access the web version</p>
+          <a href="WEB_APP_URL_PLACEHOLDER" class="login-button">Login to Coffee Date</a>
         </div>
       </div>
     </div>

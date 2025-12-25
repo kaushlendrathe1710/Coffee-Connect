@@ -16,19 +16,24 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="DiscoverTab"
       screenOptions={{
-        tabBarActiveTintColor: '#6F4E37',
-        tabBarInactiveTintColor: '#5A4535',
+        tabBarActiveTintColor: '#4A3020',
+        tabBarInactiveTintColor: '#2C1810',
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#D4C4B5',
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          backgroundColor: '#FFF8F0',
+          borderTopWidth: 2,
+          borderTopColor: '#6F4E37',
+          height: 70,
+          paddingBottom: 10,
+          paddingTop: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
+          fontSize: 13,
+          fontWeight: '700',
+          marginTop: 4,
+        },
+        tabBarShowLabel: true,
+        tabBarIconStyle: {
+          marginBottom: -4,
         },
         headerShown: false,
       }}

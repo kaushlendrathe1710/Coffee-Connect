@@ -2,7 +2,10 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/types/navigation';
 import { useScreenOptions } from '@/hooks/useScreenOptions';
+import { useAuth } from '@/contexts/AuthContext';
 
+import EmailInputScreen from '@/screens/auth/EmailInputScreen';
+import OTPVerificationScreen from '@/screens/auth/OTPVerificationScreen';
 import WelcomeScreen from '@/screens/auth/WelcomeScreen';
 import RoleSelectionScreen from '@/screens/auth/RoleSelectionScreen';
 import ProfileSetupScreen from '@/screens/auth/ProfileSetupScreen';
@@ -16,6 +19,7 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export default function AuthStackNavigator() {
   const screenOptions = useScreenOptions();
+  const { isAuthenticated } = useAuth();
 
   return (
     <Stack.Navigator 
@@ -23,7 +27,10 @@ export default function AuthStackNavigator() {
         ...screenOptions,
         headerShown: false,
       }}
+      initialRouteName={isAuthenticated ? 'Welcome' : 'EmailInput'}
     >
+      <Stack.Screen name="EmailInput" component={EmailInputScreen} />
+      <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />

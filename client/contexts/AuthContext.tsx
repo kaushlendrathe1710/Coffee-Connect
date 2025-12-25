@@ -5,6 +5,7 @@ export type UserRole = 'host' | 'guest';
 
 export interface UserProfile {
   id: string;
+  email: string;
   name: string;
   age: number;
   gender: string;

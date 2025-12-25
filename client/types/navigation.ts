@@ -15,6 +15,8 @@ export type RootStackParamList = {
 };
 
 export type AuthStackParamList = {
+  EmailInput: undefined;
+  OTPVerification: { email: string };
   Welcome: undefined;
   RoleSelection: undefined;
   ProfileSetup: { role: 'host' | 'guest' };

@@ -113,6 +113,11 @@ export default function OTPVerificationScreen() {
 
       if (!data.isNewUser && data.user.onboardingCompleted) {
         await completeOnboarding();
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Welcome' }],
+        });
       }
     } catch (err: any) {
       setError(err.message || 'Invalid verification code');
@@ -165,7 +170,7 @@ export default function OTPVerificationScreen() {
             {otp.map((digit, index) => (
               <RNTextInput
                 key={index}
-                ref={(ref) => (inputRefs.current[index] = ref)}
+                ref={(ref) => { inputRefs.current[index] = ref; }}
                 style={[
                   styles.otpInput,
                   {

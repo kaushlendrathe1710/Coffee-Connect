@@ -1,25 +1,38 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "Coffee Date",
+    "slug": "coffee-date",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "coffeedate",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.coffeedate.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Coffee Date needs your location to find nearby cafés and show you potential matches in your area.",
+        "NSCameraUsageDescription": "Coffee Date needs camera access to let you take profile photos.",
+        "NSPhotoLibraryUsageDescription": "Coffee Date needs photo library access to let you choose profile photos."
+      }
     },
     "android": {
+      "package": "com.coffeedate.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#6F4E37",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "single",
@@ -32,13 +45,26 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#F5E6D3",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#2C1810"
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Coffee Date needs your location to find nearby cafés and show you potential matches."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Coffee Date needs access to your photos to set your profile picture.",
+          "cameraPermission": "Coffee Date needs access to your camera to take profile photos."
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true

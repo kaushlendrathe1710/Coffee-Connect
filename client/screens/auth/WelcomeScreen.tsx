@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/contexts/AuthContext';
 import { Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { AuthStackParamList } from '@/types/navigation';
 
@@ -19,12 +20,24 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
+  const { isAuthenticated } = useAuth();
 
   const handleGetStarted = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    navigation.navigate('RoleSelection');
+    if (isAuthenticated) {
+      navigation.navigate('RoleSelection');
+    } else {
+      navigation.navigate('EmailInput');
+    }
+  };
+
+  const handleLogin = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    navigation.navigate('EmailInput');
   };
 
   return (
@@ -82,6 +95,15 @@ export default function WelcomeScreen() {
             Get Started
           </ThemedText>
           <Feather name="arrow-right" size={20} color={theme.buttonText} />
+        </Pressable>
+
+        <Pressable style={styles.loginLink} onPress={handleLogin}>
+          <ThemedText style={[styles.loginText, { color: theme.textSecondary }]}>
+            Already have an account?{' '}
+          </ThemedText>
+          <ThemedText style={[styles.loginTextBold, { color: theme.primary }]}>
+            Login
+          </ThemedText>
         </Pressable>
       </View>
     </ThemedView>
@@ -168,6 +190,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: Spacing.screenPadding,
+    gap: Spacing.md,
   },
   button: {
     flexDirection: 'row',
@@ -178,6 +201,19 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   buttonText: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  loginLink: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  loginText: {
+    ...Typography.body,
+  },
+  loginTextBold: {
     ...Typography.body,
     fontWeight: '600',
   },

@@ -27,7 +27,7 @@ export default function AuthStackNavigator() {
         ...screenOptions,
         headerShown: false,
       }}
-      initialRouteName={isAuthenticated ? 'Welcome' : 'EmailInput'}
+      initialRouteName="Welcome"
     >
       <Stack.Screen name="EmailInput" component={EmailInputScreen} />
       <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />

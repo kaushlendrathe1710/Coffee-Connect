@@ -3,6 +3,60 @@ import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { sendOTPEmail, generateOTP } from "./services/email";
 
+const otpSendAttempts = new Map<string, { count: number; resetAt: number }>();
+const otpVerifyAttempts = new Map<string, { count: number; resetAt: number; lockoutUntil?: number }>();
+
+const OTP_SEND_LIMIT = 5;
+const OTP_SEND_WINDOW = 60 * 60 * 1000;
+const OTP_VERIFY_LIMIT = 5;
+const OTP_VERIFY_WINDOW = 15 * 60 * 1000;
+const OTP_LOCKOUT_DURATION = 30 * 60 * 1000;
+
+function checkSendRateLimit(email: string): { allowed: boolean; retryAfter?: number } {
+  const key = email.toLowerCase();
+  const now = Date.now();
+  const record = otpSendAttempts.get(key);
+
+  if (!record || now > record.resetAt) {
+    otpSendAttempts.set(key, { count: 1, resetAt: now + OTP_SEND_WINDOW });
+    return { allowed: true };
+  }
+
+  if (record.count >= OTP_SEND_LIMIT) {
+    return { allowed: false, retryAfter: Math.ceil((record.resetAt - now) / 1000) };
+  }
+
+  record.count++;
+  return { allowed: true };
+}
+
+function checkVerifyRateLimit(email: string): { allowed: boolean; retryAfter?: number } {
+  const key = email.toLowerCase();
+  const now = Date.now();
+  const record = otpVerifyAttempts.get(key);
+
+  if (record?.lockoutUntil && now < record.lockoutUntil) {
+    return { allowed: false, retryAfter: Math.ceil((record.lockoutUntil - now) / 1000) };
+  }
+
+  if (!record || now > record.resetAt) {
+    otpVerifyAttempts.set(key, { count: 1, resetAt: now + OTP_VERIFY_WINDOW });
+    return { allowed: true };
+  }
+
+  if (record.count >= OTP_VERIFY_LIMIT) {
+    record.lockoutUntil = now + OTP_LOCKOUT_DURATION;
+    return { allowed: false, retryAfter: Math.ceil(OTP_LOCKOUT_DURATION / 1000) };
+  }
+
+  record.count++;
+  return { allowed: true };
+}
+
+function resetVerifyAttempts(email: string) {
+  otpVerifyAttempts.delete(email.toLowerCase());
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/send-otp", async (req: Request, res: Response) => {
     try {
@@ -15,6 +69,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return res.status(400).json({ error: "Invalid email format" });
+      }
+
+      const rateLimit = checkSendRateLimit(email);
+      if (!rateLimit.allowed) {
+        return res.status(429).json({
+          error: "Too many requests. Please try again later.",
+          retryAfter: rateLimit.retryAfter,
+        });
       }
 
       const otp = generateOTP();
@@ -47,6 +109,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Email and code are required" });
       }
 
+      const rateLimit = checkVerifyRateLimit(email);
+      if (!rateLimit.allowed) {
+        return res.status(429).json({
+          error: "Too many attempts. Your account is temporarily locked.",
+          retryAfter: rateLimit.retryAfter,
+        });
+      }
+
       const validOtp = await storage.getValidOtp(email, code);
 
       if (!validOtp) {
@@ -54,6 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await storage.markOtpUsed(validOtp.id);
+      resetVerifyAttempts(email);
 
       let user = await storage.getUserByEmail(email);
 

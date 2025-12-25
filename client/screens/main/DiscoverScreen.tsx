@@ -335,8 +335,7 @@ const styles = StyleSheet.create({
     right: 0,
     padding: Spacing.lg,
     paddingBottom: Spacing.xl,
-    background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   cardHeader: {
     flexDirection: 'row',

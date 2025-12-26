@@ -33,12 +33,12 @@ export default function DatePlanningScreen() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { matchId, matchName, matchPhoto } = route.params;
+  const { matchId, matchName, matchPhoto, selectedCafe: routeCafe, selectedDateISO, selectedTime: routeTime, notes: routeNotes } = route.params;
 
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedCafe, setSelectedCafe] = useState<CafeData | null>(null);
-  const [notes, setNotes] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(selectedDateISO ? new Date(selectedDateISO) : null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(routeTime || null);
+  const [selectedCafe, setSelectedCafe] = useState<CafeData | null>(routeCafe || null);
+  const [notes, setNotes] = useState(routeNotes || '');
 
   const proposeDateMutation = useMutation({
     mutationFn: async (data: {
@@ -108,9 +108,13 @@ export default function DatePlanningScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     navigation.navigate('CafeMap', {
-      onSelectCafe: (cafe: CafeData) => {
-        setSelectedCafe(cafe);
-      },
+      returnTo: 'DatePlanning',
+      matchId,
+      matchName,
+      matchPhoto,
+      selectedDateISO: selectedDate?.toISOString(),
+      selectedTime: selectedTime || undefined,
+      notes: notes || undefined,
     });
   };
 

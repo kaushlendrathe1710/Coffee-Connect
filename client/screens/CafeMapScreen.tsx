@@ -127,9 +127,17 @@ export default function CafeMapScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-    // Navigate back and pass the selected cafe
-    navigation.goBack();
-    // The onSelectCafe callback would be handled by the parent
+    // Navigate back to DatePlanning with the selected cafe and preserved state
+    const { returnTo, matchId, matchName, matchPhoto, selectedDateISO, selectedTime, notes } = route.params;
+    navigation.replace('DatePlanning', {
+      matchId,
+      matchName,
+      matchPhoto,
+      selectedCafe,
+      selectedDateISO,
+      selectedTime,
+      notes,
+    });
   };
 
   const renderCafeItem = ({ item }: { item: CafeData }) => (

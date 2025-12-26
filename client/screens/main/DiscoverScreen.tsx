@@ -351,7 +351,7 @@ export default function DiscoverScreen() {
                     </ThemedText>
                   </View>
                 </View>
-                <ThemedText style={[styles.cardBio, { color: theme.textSecondary }]} numberOfLines={2}>
+                <ThemedText style={[styles.cardBio, { color: theme.textSecondary }]}>
                   {currentProfile.bio}
                 </ThemedText>
                 <View style={styles.tagsRow}>
@@ -574,6 +574,7 @@ const styles = StyleSheet.create({
   cardInfo: {
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
+    paddingHorizontal: Spacing.md,
   },
   cardContent: {
     paddingHorizontal: Spacing.lg,

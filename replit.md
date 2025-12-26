@@ -126,6 +126,23 @@ assets/           # Images, fonts, icons
 
 ## Recent Changes
 
+### December 2025 - Phase 6: Dual-Confirmation "Date is Set" Flow
+- **Dual Confirmation**: Both Guest AND Host must click "Date is Set" before wallet is charged
+- **Database Schema**: Added `guestConfirmed` and `hostConfirmed` boolean fields to coffee_dates table
+- **Confirm API Endpoint**: POST /api/coffee-dates/:dateId/confirm
+  - Either user can call this endpoint with their userId
+  - Updates their confirmation status (guestConfirmed or hostConfirmed)
+  - When BOTH have confirmed, wallet is automatically charged
+  - Returns bothConfirmed: true, paymentProcessed: true when complete
+- **ChatScreen Integration**: 
+  - Shows prominent "Coffee Date Planned" banner when there's an active date
+  - Displays confirmation status for both users (You confirmed / Partner not confirmed)
+  - "Date is Set" button visible for the user who hasn't confirmed yet
+  - Polls for date updates every 5 seconds to show when partner confirms
+- **CalendarScreen Integration**: 
+  - Shows confirmation status (Guest pending/confirmed, Host pending/confirmed)
+  - "Date is Set" button available for both Guest and Host
+
 ### December 2025 - Phase 5: Wallet-Based Payment System
 - **Wallet System**: Guests have a wallet balance (in INR paise). Hosts set their own rates.
 - **Database Schema**: Added `walletBalance` and `hostRate` fields to users table, created `wallet_transactions` ledger table
@@ -133,13 +150,11 @@ assets/           # Images, fonts, icons
   - GET /api/wallet/:userId - Returns balance and transaction history
   - POST /api/wallet/top-up - Creates Stripe checkout session for wallet top-up (INR currency)
   - POST /api/wallet/confirm-topup - Confirms payment after Stripe webhook
-  - POST /api/wallet/charge-for-date - Host confirms date and charges guest's wallet
 - **Chat Access Gating**: Guests can only chat with hosts whose rate is <= their wallet balance
   - MatchesScreen shows lock icons and rate badges for unaffordable hosts
   - Insufficient funds prompt directs to WalletScreen with amount needed
 - **WalletScreen**: Shows balance, top-up options (500/1000/2000/5000 INR), transaction history
 - **Host Rate Setting**: Hosts can set their rate per date in ProfileScreen
-- **"Date is Set" Button**: Hosts confirm dates in CalendarScreen, which charges guest's wallet
 - **State Management**: useFocusEffect ensures wallet balance refreshes when navigating between screens
 - **Auth Payload**: walletBalance and hostRate now included in verify-otp and user update responses
 

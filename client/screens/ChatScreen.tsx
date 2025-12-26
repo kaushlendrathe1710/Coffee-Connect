@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Pressable, Platform, TextInput, FlatList, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Pressable, Platform, TextInput, FlatList, KeyboardAvoidingView, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,6 +18,19 @@ import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Chat'>;
 type ChatRouteProp = RouteProp<RootStackParamList, 'Chat'>;
+
+interface CoffeeDate {
+  id: string;
+  matchId: string;
+  guestId: string;
+  hostId: string;
+  status: string;
+  guestConfirmed: boolean;
+  hostConfirmed: boolean;
+  paymentStatus: string;
+  scheduledDate: string;
+  cafeName?: string;
+}
 
 interface Message {
   id: string;
@@ -55,6 +68,72 @@ export default function ChatScreen() {
   });
 
   const messages = messagesData?.messages || [];
+
+  // Fetch coffee dates for this match
+  const { data: datesData, refetch: refetchDates } = useQuery<{ dates: CoffeeDate[] }>({
+    queryKey: ['/api/coffee-dates/match', matchId],
+    enabled: !!matchId,
+    refetchInterval: 5000, // Poll to check if other party confirmed
+  });
+
+  // Get the most recent accepted date (only show confirmation UI for accepted dates)
+  const activeDate = datesData?.dates?.find(
+    (d) => d.status === 'accepted' && d.paymentStatus !== 'paid'
+  );
+
+  const isGuest = user?.role === 'guest';
+  const hasUserConfirmed = isGuest ? activeDate?.guestConfirmed : activeDate?.hostConfirmed;
+  const hasOtherConfirmed = isGuest ? activeDate?.hostConfirmed : activeDate?.guestConfirmed;
+
+  // Confirm date mutation
+  const confirmDateMutation = useMutation({
+    mutationFn: async (dateId: string) => {
+      const response = await apiRequest('POST', `/api/coffee-dates/${dateId}/confirm`, {
+        userId: user?.id,
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to confirm date');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/coffee-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/wallet'] });
+      refetchDates();
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      if (data.bothConfirmed && data.paymentProcessed) {
+        Alert.alert('Date Confirmed!', 'Both of you have confirmed. The date is now set and payment has been processed.');
+      } else {
+        const waitingFor = isGuest ? matchName : 'your date';
+        Alert.alert('Confirmed!', `Waiting for ${waitingFor} to also confirm.`);
+      }
+    },
+    onError: (error: any) => {
+      if (error.message.includes('Insufficient')) {
+        Alert.alert('Insufficient Balance', 'You need to add more funds to your wallet before confirming.');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to confirm date');
+      }
+    },
+  });
+
+  const handleConfirmDate = () => {
+    if (!activeDate) return;
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Alert.alert(
+      'Confirm Date is Set',
+      `Confirm that your coffee date is happening. ${isGuest ? 'Once both confirm, payment will be processed.' : 'Once both confirm, you will receive payment.'}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => confirmDateMutation.mutate(activeDate.id) },
+      ]
+    );
+  };
 
   // Hide ice breakers after first few messages
   useEffect(() => {
@@ -177,7 +256,68 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={90}
       >
-        {messages.length >= 3 ? (
+        {activeDate ? (
+          <View style={[styles.dateConfirmBanner, { backgroundColor: theme.success + '15', borderColor: theme.success }]}>
+            <View style={styles.dateConfirmInfo}>
+              <View style={styles.dateConfirmHeader}>
+                <Feather name="calendar" size={18} color={theme.success} />
+                <ThemedText style={[styles.dateConfirmTitle, { color: theme.success }]}>
+                  Coffee Date Planned
+                </ThemedText>
+              </View>
+              {activeDate.cafeName ? (
+                <ThemedText style={[styles.dateConfirmDetails, { color: theme.textSecondary }]}>
+                  {activeDate.cafeName}
+                </ThemedText>
+              ) : null}
+              <View style={styles.confirmStatusRow}>
+                <View style={styles.confirmStatus}>
+                  <Feather 
+                    name={hasUserConfirmed ? "check-circle" : "circle"} 
+                    size={14} 
+                    color={hasUserConfirmed ? theme.success : theme.textSecondary} 
+                  />
+                  <ThemedText style={[styles.confirmStatusText, { color: hasUserConfirmed ? theme.success : theme.textSecondary }]}>
+                    You {hasUserConfirmed ? 'confirmed' : 'not confirmed'}
+                  </ThemedText>
+                </View>
+                <View style={styles.confirmStatus}>
+                  <Feather 
+                    name={hasOtherConfirmed ? "check-circle" : "circle"} 
+                    size={14} 
+                    color={hasOtherConfirmed ? theme.success : theme.textSecondary} 
+                  />
+                  <ThemedText style={[styles.confirmStatusText, { color: hasOtherConfirmed ? theme.success : theme.textSecondary }]}>
+                    {matchName.split(' ')[0]} {hasOtherConfirmed ? 'confirmed' : 'not confirmed'}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+            {!hasUserConfirmed ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.dateConfirmButton,
+                  { backgroundColor: theme.success, opacity: pressed ? 0.8 : 1 },
+                ]}
+                onPress={handleConfirmDate}
+                disabled={confirmDateMutation.isPending}
+              >
+                {confirmDateMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="check" size={16} color="#FFFFFF" />
+                    <ThemedText style={styles.dateConfirmButtonText}>Date is Set</ThemedText>
+                  </>
+                )}
+              </Pressable>
+            ) : (
+              <View style={[styles.confirmedBadge, { backgroundColor: theme.success }]}>
+                <Feather name="check" size={14} color="#FFFFFF" />
+              </View>
+            )}
+          </View>
+        ) : messages.length >= 3 ? (
           <Pressable
             style={({ pressed }) => [
               styles.planDateBanner,
@@ -314,6 +454,67 @@ const styles = StyleSheet.create({
   planDateText: {
     ...Typography.body,
     fontWeight: '600',
+  },
+  dateConfirmBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    marginHorizontal: Spacing.screenPadding,
+    marginTop: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  dateConfirmInfo: {
+    flex: 1,
+  },
+  dateConfirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: 4,
+  },
+  dateConfirmTitle: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  dateConfirmDetails: {
+    ...Typography.small,
+    marginBottom: Spacing.sm,
+  },
+  confirmStatusRow: {
+    flexDirection: 'row',
+    gap: Spacing.lg,
+  },
+  confirmStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  confirmStatusText: {
+    ...Typography.caption,
+  },
+  dateConfirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    marginLeft: Spacing.sm,
+  },
+  dateConfirmButtonText: {
+    ...Typography.small,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  confirmedBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: Spacing.sm,
   },
   emptyChat: {
     flex: 1,

@@ -104,6 +104,8 @@ export const coffeeDates = pgTable("coffee_dates", {
   cafeLatitude: text("cafe_latitude"),
   cafeLongitude: text("cafe_longitude"),
   status: text("status").$type<'proposed' | 'accepted' | 'declined' | 'confirmed' | 'completed' | 'cancelled'>().default('proposed'),
+  guestConfirmed: boolean("guest_confirmed").default(false),
+  hostConfirmed: boolean("host_confirmed").default(false),
   paymentStatus: text("payment_status").$type<'pending' | 'paid' | 'refunded'>().default('pending'),
   paymentAmount: integer("payment_amount"),
   stripePaymentIntentId: text("stripe_payment_intent_id"),

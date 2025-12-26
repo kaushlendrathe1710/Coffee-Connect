@@ -28,6 +28,8 @@ interface CoffeeDateData {
   cafeAddress: string | null;
   cafeLocation: { latitude: number; longitude: number } | null;
   status: 'proposed' | 'accepted' | 'declined' | 'confirmed' | 'completed' | 'cancelled';
+  guestConfirmed: boolean;
+  hostConfirmed: boolean;
   paymentStatus: 'pending' | 'paid' | 'refunded';
   paymentAmount: number | null;
   notes: string | null;
@@ -197,12 +199,11 @@ export default function CalendarScreen() {
     checkoutMutation.mutate(dateId);
   };
 
-  // Host confirms date and charges guest's wallet
+  // User confirms date
   const confirmDateMutation = useMutation({
     mutationFn: async (dateId: string) => {
-      const response = await apiRequest('POST', '/api/wallet/charge-for-date', { 
-        dateId, 
-        hostId: user?.id 
+      const response = await apiRequest('POST', `/api/coffee-dates/${dateId}/confirm`, { 
+        userId: user?.id 
       });
       if (!response.ok) {
         const error = await response.json();
@@ -210,17 +211,25 @@ export default function CalendarScreen() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/coffee-dates'] });
       queryClient.invalidateQueries({ queryKey: ['/api/wallet'] });
       queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-      Alert.alert('Success', 'Date confirmed! The guest has been charged.');
+      if (data.bothConfirmed && data.paymentProcessed) {
+        Alert.alert('Date Confirmed!', 'Both parties have confirmed. Payment has been processed.');
+      } else {
+        Alert.alert('Confirmed!', 'Waiting for the other person to also confirm.');
+      }
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to confirm date');
+      if (error.message.includes('Insufficient')) {
+        Alert.alert('Insufficient Balance', 'The guest needs to add more funds before confirming.');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to confirm date');
+      }
     },
   });
 
@@ -228,18 +237,28 @@ export default function CalendarScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    const hostRate = user?.hostRate || 0;
+    const isGuest = user?.role === 'guest';
     Alert.alert(
-      'Confirm Date',
-      `This will charge the guest ${(hostRate / 100).toFixed(0)} INR from their wallet. Continue?`,
+      'Confirm Date is Set',
+      `Confirm that your coffee date is happening. ${isGuest ? 'Once both confirm, payment will be processed.' : 'Once both confirm, you will receive payment.'}`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
-          text: 'Confirm & Charge', 
+          text: 'Confirm', 
           onPress: () => confirmDateMutation.mutate(date.id),
         },
       ]
     );
+  };
+
+  const hasUserConfirmed = (date: CoffeeDateData) => {
+    const isGuest = user?.role === 'guest';
+    return isGuest ? date.guestConfirmed : date.hostConfirmed;
+  };
+
+  const hasOtherConfirmed = (date: CoffeeDateData) => {
+    const isGuest = user?.role === 'guest';
+    return isGuest ? date.hostConfirmed : date.guestConfirmed;
   };
 
   const renderDateCard = (date: CoffeeDateData) => {
@@ -318,19 +337,43 @@ export default function CalendarScreen() {
             </View>
           )}
           
-          {/* Host can confirm date and charge guest */}
-          {date.status === 'accepted' && user?.role === 'host' && date.paymentStatus !== 'paid' && (
-            <View style={styles.actionButtons}>
-              <Pressable
-                style={[styles.actionButton, styles.payButton, { backgroundColor: theme.success }]}
-                onPress={() => handleConfirmDate(date)}
-                disabled={confirmDateMutation.isPending}
-              >
-                <Feather name="check-circle" size={16} color="#FFFFFF" />
-                <ThemedText style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
-                  {confirmDateMutation.isPending ? 'Processing...' : 'Date is Set'}
-                </ThemedText>
-              </Pressable>
+          {/* Both guest and host can confirm date */}
+          {date.status === 'accepted' && date.paymentStatus !== 'paid' && (
+            <View style={styles.confirmSection}>
+              <View style={styles.confirmStatusRow}>
+                <View style={styles.confirmStatus}>
+                  <Feather 
+                    name={date.guestConfirmed ? "check-circle" : "circle"} 
+                    size={12} 
+                    color={date.guestConfirmed ? theme.success : theme.textSecondary} 
+                  />
+                  <ThemedText style={[styles.confirmStatusText, { color: date.guestConfirmed ? theme.success : theme.textSecondary }]}>
+                    Guest {date.guestConfirmed ? 'confirmed' : 'pending'}
+                  </ThemedText>
+                </View>
+                <View style={styles.confirmStatus}>
+                  <Feather 
+                    name={date.hostConfirmed ? "check-circle" : "circle"} 
+                    size={12} 
+                    color={date.hostConfirmed ? theme.success : theme.textSecondary} 
+                  />
+                  <ThemedText style={[styles.confirmStatusText, { color: date.hostConfirmed ? theme.success : theme.textSecondary }]}>
+                    Host {date.hostConfirmed ? 'confirmed' : 'pending'}
+                  </ThemedText>
+                </View>
+              </View>
+              {!hasUserConfirmed(date) && (
+                <Pressable
+                  style={[styles.actionButton, styles.confirmButton, { backgroundColor: theme.success }]}
+                  onPress={() => handleConfirmDate(date)}
+                  disabled={confirmDateMutation.isPending}
+                >
+                  <Feather name="check" size={14} color="#FFFFFF" />
+                  <ThemedText style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
+                    {confirmDateMutation.isPending ? 'Processing...' : 'Date is Set'}
+                  </ThemedText>
+                </Pressable>
+              )}
             </View>
           )}
           
@@ -567,6 +610,25 @@ const styles = StyleSheet.create({
   acceptButton: {},
   payButton: {
     flex: 1,
+  },
+  confirmButton: {
+    flex: 1,
+    marginTop: Spacing.sm,
+  },
+  confirmSection: {
+    marginTop: Spacing.sm,
+  },
+  confirmStatusRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  confirmStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  confirmStatusText: {
+    fontSize: 11,
   },
   actionButtonText: {
     ...Typography.small,

@@ -850,13 +850,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Host confirms date is set - charges guest's wallet
-  app.post("/api/wallet/charge-for-date", async (req: Request, res: Response) => {
+  // User confirms "Date is Set" - both guest and host must confirm before wallet is charged
+  app.post("/api/coffee-dates/:dateId/confirm", async (req: Request, res: Response) => {
     try {
-      const { dateId, hostId } = req.body;
+      const { dateId } = req.params;
+      const { userId } = req.body;
 
-      if (!dateId || !hostId) {
-        return res.status(400).json({ error: "dateId and hostId are required" });
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
       }
 
       const coffeeDate = await storage.getCoffeeDate(dateId);
@@ -864,74 +865,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Coffee date not found" });
       }
 
-      // Only the host can confirm the date
-      if (coffeeDate.hostId !== hostId) {
-        return res.status(403).json({ error: "Only the host can confirm the date" });
-      }
-
-      // Date must be accepted first
-      if (coffeeDate.status !== 'accepted') {
-        return res.status(400).json({ error: "Date must be accepted before confirming" });
-      }
-
       // Already confirmed/paid
       if (coffeeDate.paymentStatus === 'paid') {
-        return res.status(400).json({ error: "This date has already been paid for" });
+        return res.status(400).json({ error: "This date has already been confirmed and paid" });
       }
 
-      const host = await storage.getUser(hostId);
-      const guest = await storage.getUser(coffeeDate.guestId);
-
-      if (!host || !guest) {
-        return res.status(404).json({ error: "Users not found" });
+      // Only accepted dates can be confirmed
+      if (coffeeDate.status !== 'accepted') {
+        return res.status(400).json({ error: "Only accepted dates can be confirmed. Current status: " + coffeeDate.status });
       }
 
-      // Get the host's rate
-      const hostRate = host.hostRate || 0;
-      if (hostRate <= 0) {
-        return res.status(400).json({ error: "Host has not set a rate" });
+      const isGuest = coffeeDate.guestId === userId;
+      const isHost = coffeeDate.hostId === userId;
+
+      if (!isGuest && !isHost) {
+        return res.status(403).json({ error: "You are not part of this date" });
       }
 
-      // Check if guest has enough balance
-      const guestBalance = guest.walletBalance || 0;
-      if (guestBalance < hostRate) {
-        return res.status(400).json({ 
-          error: "Guest does not have enough balance",
-          required: hostRate,
-          available: guestBalance,
+      // Update the confirmation status for this user
+      const updates: any = {};
+      if (isGuest) {
+        updates.guestConfirmed = true;
+      } else {
+        updates.hostConfirmed = true;
+      }
+
+      await storage.updateCoffeeDate(dateId, updates);
+
+      // Refetch to get updated data
+      const updatedDate = await storage.getCoffeeDate(dateId);
+      if (!updatedDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      // Check if BOTH have now confirmed
+      if (updatedDate.guestConfirmed && updatedDate.hostConfirmed) {
+        const host = await storage.getUser(updatedDate.hostId);
+        const guest = await storage.getUser(updatedDate.guestId);
+
+        if (!host || !guest) {
+          return res.status(404).json({ error: "Users not found" });
+        }
+
+        // Get the host's rate
+        const hostRate = host.hostRate || 0;
+        if (hostRate <= 0) {
+          return res.status(400).json({ error: "Host has not set a rate" });
+        }
+
+        // Check if guest has enough balance
+        const guestBalance = guest.walletBalance || 0;
+        if (guestBalance < hostRate) {
+          // Revert the confirmation since payment can't be processed
+          await storage.updateCoffeeDate(dateId, { 
+            guestConfirmed: false 
+          });
+          return res.status(400).json({ 
+            error: "Insufficient wallet balance",
+            required: hostRate,
+            available: guestBalance,
+          });
+        }
+
+        // Deduct from guest's wallet
+        const newGuestBalance = guestBalance - hostRate;
+        await storage.updateWalletBalance(guest.id, newGuestBalance);
+
+        // Record the transaction
+        await storage.createWalletTransaction({
+          userId: guest.id,
+          amount: hostRate,
+          type: 'debit',
+          source: 'date_fee',
+          description: `Coffee date with ${host.name}`,
+          relatedDateId: dateId,
+        });
+
+        // Update the coffee date status
+        await storage.updateCoffeeDate(dateId, {
+          status: 'confirmed',
+          paymentStatus: 'paid',
+          paymentAmount: hostRate,
+        });
+
+        return res.json({ 
+          success: true, 
+          bothConfirmed: true,
+          paymentProcessed: true,
+          amountCharged: hostRate,
+          guestConfirmed: true,
+          hostConfirmed: true,
         });
       }
 
-      // Deduct from guest's wallet
-      const newGuestBalance = guestBalance - hostRate;
-      await storage.updateWalletBalance(guest.id, newGuestBalance);
-
-      // Record the transaction
-      await storage.createWalletTransaction({
-        userId: guest.id,
-        amount: hostRate,
-        type: 'debit',
-        source: 'date_fee',
-        description: `Coffee date with ${host.name}`,
-        relatedDateId: dateId,
-      });
-
-      // Update the coffee date status
-      await storage.updateCoffeeDate(dateId, {
-        status: 'confirmed',
-        paymentStatus: 'paid',
-        paymentAmount: hostRate,
-      });
-
+      // Only one party has confirmed so far
       res.json({ 
         success: true, 
-        newGuestBalance,
-        amountCharged: hostRate,
+        bothConfirmed: false,
+        guestConfirmed: updatedDate.guestConfirmed,
+        hostConfirmed: updatedDate.hostConfirmed,
+        waitingFor: updatedDate.guestConfirmed ? 'host' : 'guest',
       });
     } catch (error) {
-      console.error("Error charging for date:", error);
-      res.status(500).json({ error: "Failed to process payment" });
+      console.error("Error confirming date:", error);
+      res.status(500).json({ error: "Failed to confirm date" });
     }
+  });
+
+  // Legacy endpoint - redirect to new confirm endpoint
+  app.post("/api/wallet/charge-for-date", async (req: Request, res: Response) => {
+    return res.status(410).json({ error: "This endpoint is deprecated. Use POST /api/coffee-dates/:dateId/confirm instead" });
   });
 
   // ==================== STRIPE PAYMENT ROUTES ====================

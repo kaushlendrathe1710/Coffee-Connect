@@ -2,6 +2,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MainTabParamList } from '@/types/navigation';
 
 import DiscoverScreen from '@/screens/main/DiscoverScreen';
@@ -12,6 +13,7 @@ import ProfileScreen from '@/screens/main/ProfileScreen';
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabNavigator() {
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -23,8 +25,8 @@ export default function MainTabNavigator() {
           backgroundColor: '#FFF8F0',
           borderTopWidth: 2,
           borderTopColor: '#6F4E37',
-          height: 65,
-          paddingBottom: 8,
+          height: 65 + insets.bottom,
+          paddingBottom: insets.bottom + 8,
           paddingTop: 6,
         },
         tabBarLabelStyle: {

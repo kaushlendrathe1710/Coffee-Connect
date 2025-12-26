@@ -96,27 +96,6 @@ export default function SettingsScreen() {
     navigation.navigate('PrivacyPolicy');
   };
 
-  const handleSafetyPrivacy = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    navigation.navigate('SafetyPrivacy');
-  };
-
-  const handlePaymentHistory = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    navigation.navigate('Wallet');
-  };
-
-  const handleHelpSupport = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    navigation.navigate('HelpSupport');
-  };
-
   const handleDeleteAccount = () => {
     const confirmDelete = async () => {
       try {
@@ -186,14 +165,6 @@ export default function SettingsScreen() {
         { icon: 'slash', label: 'Blocked Users', type: 'link', onPress: handleBlockedUsers },
         { icon: 'file-text', label: 'Terms of Service', type: 'link', onPress: handleTermsOfService },
         { icon: 'lock', label: 'Privacy Policy', type: 'link', onPress: handlePrivacyPolicy },
-      ],
-    },
-    {
-      title: 'More',
-      items: [
-        { icon: 'shield', label: 'Safety & Privacy', type: 'link', onPress: handleSafetyPrivacy },
-        { icon: 'credit-card', label: 'Payment History', type: 'link', onPress: handlePaymentHistory },
-        { icon: 'help-circle', label: 'Help & Support', type: 'link', onPress: handleHelpSupport },
       ],
     },
   ];

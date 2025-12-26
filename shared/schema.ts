@@ -71,6 +71,28 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Coffee dates table - scheduled coffee dates between matched users
+export const coffeeDates = pgTable("coffee_dates", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  matchId: varchar("match_id").notNull().references(() => matches.id),
+  proposedBy: varchar("proposed_by").notNull().references(() => users.id),
+  guestId: varchar("guest_id").notNull().references(() => users.id),
+  hostId: varchar("host_id").notNull().references(() => users.id),
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  cafeName: text("cafe_name"),
+  cafeAddress: text("cafe_address"),
+  cafeLatitude: text("cafe_latitude"),
+  cafeLongitude: text("cafe_longitude"),
+  status: text("status").$type<'proposed' | 'accepted' | 'declined' | 'confirmed' | 'completed' | 'cancelled'>().default('proposed'),
+  paymentStatus: text("payment_status").$type<'pending' | 'paid' | 'refunded'>().default('pending'),
+  paymentAmount: integer("payment_amount"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   name: true,
@@ -100,6 +122,19 @@ export const insertMessageSchema = createInsertSchema(messages).pick({
   content: true,
 });
 
+export const insertCoffeeDateSchema = createInsertSchema(coffeeDates).pick({
+  matchId: true,
+  proposedBy: true,
+  guestId: true,
+  hostId: true,
+  scheduledDate: true,
+  cafeName: true,
+  cafeAddress: true,
+  cafeLatitude: true,
+  cafeLongitude: true,
+  notes: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOtp = z.infer<typeof insertOtpSchema>;
@@ -110,3 +145,5 @@ export type InsertMatch = z.infer<typeof insertMatchSchema>;
 export type Match = typeof matches.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+export type InsertCoffeeDate = z.infer<typeof insertCoffeeDateSchema>;
+export type CoffeeDate = typeof coffeeDates.$inferSelect;

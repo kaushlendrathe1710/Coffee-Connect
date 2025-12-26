@@ -4,6 +4,7 @@ import {
   swipes, 
   matches, 
   messages,
+  coffeeDates,
   type User, 
   type InsertUser, 
   type OtpCode, 
@@ -13,10 +14,12 @@ import {
   type Match,
   type InsertMatch,
   type Message,
-  type InsertMessage
+  type InsertMessage,
+  type CoffeeDate,
+  type InsertCoffeeDate
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql } from "drizzle-orm";
+import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql, gte } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -49,6 +52,14 @@ export interface IStorage {
 
   // Discovery
   getDiscoverableProfiles(userId: string, role: 'host' | 'guest'): Promise<User[]>;
+
+  // Coffee Dates
+  createCoffeeDate(date: InsertCoffeeDate): Promise<CoffeeDate>;
+  getCoffeeDate(id: string): Promise<CoffeeDate | undefined>;
+  getCoffeeDatesForUser(userId: string): Promise<CoffeeDate[]>;
+  getUpcomingCoffeeDatesForUser(userId: string): Promise<CoffeeDate[]>;
+  getCoffeeDatesForMatch(matchId: string): Promise<CoffeeDate[]>;
+  updateCoffeeDate(id: string, updates: Partial<CoffeeDate>): Promise<CoffeeDate | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -261,6 +272,75 @@ export class DatabaseStorage implements IStorage {
       .limit(20);
 
     return await query;
+  }
+
+  // Coffee Date methods
+  async createCoffeeDate(date: InsertCoffeeDate): Promise<CoffeeDate> {
+    const [newDate] = await db
+      .insert(coffeeDates)
+      .values(date)
+      .returning();
+    return newDate;
+  }
+
+  async getCoffeeDate(id: string): Promise<CoffeeDate | undefined> {
+    const [date] = await db
+      .select()
+      .from(coffeeDates)
+      .where(eq(coffeeDates.id, id));
+    return date || undefined;
+  }
+
+  async getCoffeeDatesForUser(userId: string): Promise<CoffeeDate[]> {
+    return await db
+      .select()
+      .from(coffeeDates)
+      .where(
+        or(
+          eq(coffeeDates.guestId, userId),
+          eq(coffeeDates.hostId, userId)
+        )
+      )
+      .orderBy(desc(coffeeDates.scheduledDate));
+  }
+
+  async getUpcomingCoffeeDatesForUser(userId: string): Promise<CoffeeDate[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(coffeeDates)
+      .where(
+        and(
+          or(
+            eq(coffeeDates.guestId, userId),
+            eq(coffeeDates.hostId, userId)
+          ),
+          gte(coffeeDates.scheduledDate, now),
+          or(
+            eq(coffeeDates.status, 'proposed'),
+            eq(coffeeDates.status, 'accepted'),
+            eq(coffeeDates.status, 'confirmed')
+          )
+        )
+      )
+      .orderBy(asc(coffeeDates.scheduledDate));
+  }
+
+  async getCoffeeDatesForMatch(matchId: string): Promise<CoffeeDate[]> {
+    return await db
+      .select()
+      .from(coffeeDates)
+      .where(eq(coffeeDates.matchId, matchId))
+      .orderBy(desc(coffeeDates.createdAt));
+  }
+
+  async updateCoffeeDate(id: string, updates: Partial<CoffeeDate>): Promise<CoffeeDate | undefined> {
+    const [date] = await db
+      .update(coffeeDates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(coffeeDates.id, id))
+      .returning();
+    return date || undefined;
   }
 }
 

@@ -434,62 +434,140 @@ export default function AdminDashboardScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
-        <View style={styles.headerContent}>
-          <View>
-            <ThemedText style={styles.headerTitle}>Admin Dashboard</ThemedText>
-            <ThemedText style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-              Welcome, {user?.name || 'Admin'}
-            </ThemedText>
+      <View style={styles.mainLayout}>
+        <View style={[styles.sidebar, { backgroundColor: theme.backgroundSecondary, paddingTop: insets.top + Spacing.md }]}>
+          <View style={styles.sidebarHeader}>
+            <View style={[styles.avatarContainer, { backgroundColor: theme.primary }]}>
+              <Feather name="shield" size={24} color="#FFF" />
+            </View>
+            <ThemedText style={styles.sidebarTitle}>Admin</ThemedText>
           </View>
-          <Pressable onPress={handleLogout} style={[styles.logoutButton, { backgroundColor: theme.error + '20' }]}>
-            <Feather name="log-out" size={20} color={theme.error} />
-          </Pressable>
+          
+          <View style={styles.sidebarNav}>
+            {tabs.map((tab) => (
+              <Pressable
+                key={tab.key}
+                style={[
+                  styles.sidebarTab,
+                  activeTab === tab.key && { backgroundColor: theme.primary },
+                ]}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  if (Platform.OS !== 'web') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                }}
+              >
+                <Feather name={tab.icon} size={20} color={activeTab === tab.key ? '#FFF' : theme.text} />
+                <ThemedText style={[styles.sidebarTabText, activeTab === tab.key && { color: '#FFF' }]}>
+                  {tab.label}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          
+          <View style={[styles.sidebarFooter, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <Pressable onPress={handleLogout} style={[styles.logoutButtonSidebar, { backgroundColor: theme.error + '20' }]}>
+              <Feather name="log-out" size={18} color={theme.error} />
+              <ThemedText style={[styles.logoutText, { color: theme.error }]}>Log Out</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.contentArea}>
+          <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+            <View style={styles.headerContent}>
+              <View>
+                <ThemedText style={styles.headerTitle}>{tabs.find(t => t.key === activeTab)?.label || 'Dashboard'}</ThemedText>
+                <ThemedText style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
+                  {user?.name || user?.email || 'Admin'}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + Spacing.xl }]}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+          >
+            {activeTab === 'stats' && renderStats()}
+            {activeTab === 'users' && renderUsers()}
+            {activeTab === 'matches' && renderMatches()}
+            {activeTab === 'dates' && renderDates()}
+            {activeTab === 'transactions' && renderTransactions()}
+          </ScrollView>
         </View>
       </View>
-
-      <View style={[styles.tabBar, { backgroundColor: theme.backgroundSecondary }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarContent}>
-          {tabs.map((tab) => (
-            <Pressable
-              key={tab.key}
-              style={[
-                styles.tab,
-                activeTab === tab.key && { backgroundColor: theme.primary },
-              ]}
-              onPress={() => {
-                setActiveTab(tab.key);
-                if (Platform.OS !== 'web') {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-              }}
-            >
-              <Feather name={tab.icon} size={16} color={activeTab === tab.key ? '#FFF' : theme.text} />
-              <ThemedText style={[styles.tabText, activeTab === tab.key && { color: '#FFF' }]}>
-                {tab.label}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
-
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + Spacing.xl }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
-      >
-        {activeTab === 'stats' && renderStats()}
-        {activeTab === 'users' && renderUsers()}
-        {activeTab === 'matches' && renderMatches()}
-        {activeTab === 'dates' && renderDates()}
-        {activeTab === 'transactions' && renderTransactions()}
-      </ScrollView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  mainLayout: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  sidebar: {
+    width: 80,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xs,
+  },
+  sidebarHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
+  sidebarTitle: {
+    ...Typography.small,
+    fontWeight: '700',
+  },
+  sidebarNav: {
+    flex: 1,
+    gap: Spacing.sm,
+    width: '100%',
+  },
+  sidebarTab: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.md,
+  },
+  sidebarTabText: {
+    ...Typography.caption,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  sidebarFooter: {
+    marginTop: 'auto',
+    width: '100%',
+  },
+  logoutButtonSidebar: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.md,
+  },
+  logoutText: {
+    ...Typography.caption,
+    fontWeight: '600',
+  },
+  contentArea: {
     flex: 1,
   },
   header: {
@@ -507,33 +585,6 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     ...Typography.body,
-  },
-  logoutButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabBar: {
-    paddingVertical: Spacing.sm,
-  },
-  tabBarContent: {
-    paddingHorizontal: Spacing.md,
-    paddingRight: Spacing["2xl"],
-    gap: Spacing.sm,
-  },
-  tab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  tabText: {
-    ...Typography.small,
-    fontWeight: '600',
   },
   content: {
     flex: 1,

@@ -25,6 +25,9 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - Spacing.screenPadding * 2;
+const HEADER_HEIGHT = 60;
+const ACTION_AREA_HEIGHT = 120;
+const CARD_HEIGHT = SCREEN_HEIGHT - HEADER_HEIGHT - ACTION_AREA_HEIGHT - 180;
 
 interface Profile {
   id: string;
@@ -226,7 +229,7 @@ export default function DiscoverScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.lg }]}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md, height: HEADER_HEIGHT + insets.top }]}>
         <View style={styles.headerLogo}>
           <Image
             source={require('@assets/images/icon.png')}
@@ -242,31 +245,34 @@ export default function DiscoverScreen() {
           <Animated.View
             style={[
               styles.card,
-              { backgroundColor: theme.cardBackground, transform: [{ translateX }, { rotate }] },
+              { 
+                backgroundColor: theme.cardBackground, 
+                transform: [{ translateX }, { rotate }],
+                height: Math.max(CARD_HEIGHT, 380),
+              },
               Shadows.large,
             ]}
           >
-            <Image
-              source={{ uri: currentProfile.photos[0] }}
-              style={styles.cardImage}
-              contentFit="cover"
-            />
-            <View style={styles.cardOverlay}>
-              <Animated.View style={[styles.stamp, styles.likeStamp, { opacity: likeOpacity }]}>
-                <ThemedText style={[styles.stampText, { color: Colors.light.success }]}>LIKE</ThemedText>
-              </Animated.View>
-              <Animated.View style={[styles.stamp, styles.nopeStamp, { opacity: nopeOpacity }]}>
-                <ThemedText style={[styles.stampText, { color: Colors.light.error }]}>NOPE</ThemedText>
-              </Animated.View>
+            <View style={styles.imageContainer}>
+              <Image
+                source={{ uri: currentProfile.photos[0] }}
+                style={styles.cardImage}
+                contentFit="cover"
+              />
+              <View style={styles.cardOverlay}>
+                <Animated.View style={[styles.stamp, styles.likeStamp, { opacity: likeOpacity }]}>
+                  <ThemedText style={[styles.stampText, { color: Colors.light.success }]}>LIKE</ThemedText>
+                </Animated.View>
+                <Animated.View style={[styles.stamp, styles.nopeStamp, { opacity: nopeOpacity }]}>
+                  <ThemedText style={[styles.stampText, { color: Colors.light.error }]}>NOPE</ThemedText>
+                </Animated.View>
+              </View>
             </View>
-            <View style={[styles.cardInfo, Platform.OS === 'ios' ? {} : { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-              {Platform.OS === 'ios' ? (
-                <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-              ) : null}
+            <View style={[styles.cardInfo, { backgroundColor: theme.cardBackground }]}>
               <View style={styles.cardContent}>
                 <View style={styles.cardHeader}>
                   <View style={styles.nameRow}>
-                    <ThemedText style={[styles.cardName, { color: '#FFFFFF' }]}>
+                    <ThemedText style={styles.cardName}>
                       {currentProfile.name}, {currentProfile.age}
                     </ThemedText>
                     {currentProfile.verified ? (
@@ -281,17 +287,17 @@ export default function DiscoverScreen() {
                     </ThemedText>
                   </View>
                 </View>
-                <ThemedText style={[styles.cardBio, { color: 'rgba(255,255,255,0.9)' }]} numberOfLines={2}>
+                <ThemedText style={[styles.cardBio, { color: theme.textSecondary }]} numberOfLines={2}>
                   {currentProfile.bio}
                 </ThemedText>
                 <View style={styles.tagsRow}>
                   {currentProfile.coffeePreferences?.slice(0, 3).map((pref) => (
                     <View
                       key={pref}
-                      style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                      style={[styles.tag, { backgroundColor: theme.backgroundSecondary }]}
                     >
-                      <Feather name="coffee" size={12} color="#FFFFFF" />
-                      <ThemedText style={[styles.tagText, { color: '#FFFFFF' }]}>{pref}</ThemedText>
+                      <Feather name="coffee" size={12} color={theme.primary} />
+                      <ThemedText style={[styles.tagText, { color: theme.text }]}>{pref}</ThemedText>
                     </View>
                   ))}
                 </View>
@@ -301,7 +307,7 @@ export default function DiscoverScreen() {
         </GestureDetector>
       </View>
 
-      <View style={[styles.actions, { paddingBottom: insets.bottom + 100 }]}>
+      <View style={[styles.actions, { height: ACTION_AREA_HEIGHT, paddingBottom: insets.bottom + Spacing.lg }]}>
         <Pressable
           style={({ pressed }) => [
             styles.actionButton,
@@ -425,9 +431,12 @@ const styles = StyleSheet.create({
   },
   card: {
     width: CARD_WIDTH,
-    height: SCREEN_HEIGHT * 0.58,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.xl,
     overflow: 'hidden',
+  },
+  imageContainer: {
+    flex: 1,
+    minHeight: 200,
   },
   cardImage: {
     width: '100%',
@@ -435,8 +444,9 @@ const styles = StyleSheet.create({
   },
   cardOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    paddingTop: Spacing.xl,
   },
   stamp: {
     position: 'absolute',
@@ -460,15 +470,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   cardInfo: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    overflow: 'hidden',
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   cardContent: {
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -524,8 +530,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing['2xl'],
-    paddingTop: Spacing.xl,
+    gap: Spacing['3xl'],
   },
   actionButton: {
     width: 64,

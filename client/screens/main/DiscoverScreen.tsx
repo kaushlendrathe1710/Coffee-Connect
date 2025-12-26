@@ -275,10 +275,18 @@ export default function DiscoverScreen() {
             ]}
           >
             <View style={styles.imageContainer}>
+              {/* Blurred background to fill empty space */}
+              <Image
+                source={{ uri: currentProfile.photos[currentPhotoIndex] || currentProfile.photos[0] }}
+                style={styles.cardImageBlurred}
+                contentFit="cover"
+                blurRadius={20}
+              />
+              {/* Main image - show full photo */}
               <Image
                 source={{ uri: currentProfile.photos[currentPhotoIndex] || currentProfile.photos[0] }}
                 style={styles.cardImage}
-                contentFit="cover"
+                contentFit="contain"
               />
               {/* Photo navigation tap zones */}
               <View style={styles.photoTapZones}>
@@ -498,12 +506,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   imageContainer: {
-    width: '100%',
-    aspectRatio: 3 / 4,
+    flex: 1,
+    minHeight: 300,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardImageBlurred: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
   },
   cardImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
   photoTapZones: {
     ...StyleSheet.absoluteFillObject,

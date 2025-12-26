@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Pressable, Platform, Dimensions, Animated, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -13,6 +13,8 @@ import { BlurView } from 'expo-blur';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { AnimatedEmptyState } from '@/components/AnimatedEmptyState';
+import { ConfettiEffect } from '@/components/ConfettiEffect';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
@@ -203,20 +205,20 @@ export default function DiscoverScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={[styles.emptyState, { paddingTop: insets.top + Spacing['3xl'] }]}>
-          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
-            <Feather name="coffee" size={64} color={theme.primary} />
-          </View>
-          <ThemedText style={styles.emptyTitle}>No more profiles</ThemedText>
-          <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            Check back later for new coffee dates!
-          </ThemedText>
-          <Pressable
-            style={[styles.refreshButton, { backgroundColor: theme.primary }]}
-            onPress={() => refetch()}
-          >
-            <Feather name="refresh-cw" size={20} color="#FFFFFF" />
-            <ThemedText style={styles.refreshText}>Refresh</ThemedText>
-          </Pressable>
+          <AnimatedEmptyState
+            icon="coffee"
+            title="No more profiles"
+            subtitle="Check back later for new coffee dates!"
+            action={
+              <Pressable
+                style={[styles.refreshButton, { backgroundColor: theme.primary }]}
+                onPress={() => refetch()}
+              >
+                <Feather name="refresh-cw" size={20} color="#FFFFFF" />
+                <ThemedText style={styles.refreshText}>Refresh</ThemedText>
+              </Pressable>
+            }
+          />
         </View>
       </ThemedView>
     );
@@ -332,6 +334,7 @@ export default function DiscoverScreen() {
         onRequestClose={handleCloseMatch}
       >
         <View style={styles.modalOverlay}>
+          <ConfettiEffect isActive={showMatchModal} />
           <Animated.View 
             style={[
               styles.matchModal, 

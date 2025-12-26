@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { AnimatedEmptyState } from '@/components/AnimatedEmptyState';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
@@ -172,20 +173,20 @@ export default function MatchesScreen() {
           <ThemedText style={styles.headerTitle}>Matches</ThemedText>
         </View>
         <View style={styles.emptyState}>
-          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
-            <Feather name="heart" size={64} color={theme.primary} />
-          </View>
-          <ThemedText style={styles.emptyTitle}>No matches yet</ThemedText>
-          <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            Keep swiping to find your perfect coffee match!
-          </ThemedText>
-          <Pressable
-            style={[styles.discoverButton, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('Main', { screen: 'DiscoverTab' })}
-          >
-            <Feather name="search" size={20} color="#FFFFFF" />
-            <ThemedText style={styles.discoverButtonText}>Start Discovering</ThemedText>
-          </Pressable>
+          <AnimatedEmptyState
+            icon="heart"
+            title="No matches yet"
+            subtitle="Keep swiping to find your perfect coffee match!"
+            action={
+              <Pressable
+                style={[styles.discoverButton, { backgroundColor: theme.primary }]}
+                onPress={() => navigation.navigate('Main', { screen: 'DiscoverTab' })}
+              >
+                <Feather name="search" size={20} color="#FFFFFF" />
+                <ThemedText style={styles.discoverButtonText}>Start Discovering</ThemedText>
+              </Pressable>
+            }
+          />
         </View>
       </ThemedView>
     );

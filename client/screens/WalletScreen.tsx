@@ -14,7 +14,7 @@ import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiRequest } from '@/lib/query-client';
 
-const TOP_UP_AMOUNTS = [500, 1000, 2000, 5000];
+const TOP_UP_AMOUNTS = [1, 500, 1000, 2000, 5000];
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();

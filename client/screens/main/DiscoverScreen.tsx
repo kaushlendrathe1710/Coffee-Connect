@@ -498,8 +498,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   imageContainer: {
-    flex: 1,
-    minHeight: 200,
+    width: '100%',
+    aspectRatio: 3 / 4,
   },
   cardImage: {
     width: '100%',

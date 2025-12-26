@@ -76,16 +76,16 @@ export default function AdminDashboardScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('stats');
   const [refreshing, setRefreshing] = useState(false);
 
-  const adminHeaders = { 
+  const getAdminHeaders = () => ({ 
     'x-admin-id': user?.id || '',
     'x-admin-email': user?.email || '',
-  };
+  });
 
   const { data: statsData, refetch: refetchStats } = useQuery<{ stats: PlatformStats }>({
-    queryKey: ['/api/admin/stats'],
+    queryKey: ['/api/admin/stats', user?.id],
     queryFn: async () => {
       const res = await fetch(new URL('/api/admin/stats', getApiUrl()).toString(), {
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) throw new Error('Failed to fetch stats');
       return res.json();
@@ -94,10 +94,10 @@ export default function AdminDashboardScreen() {
   });
 
   const { data: usersData, refetch: refetchUsers } = useQuery<{ users: AdminUser[] }>({
-    queryKey: ['/api/admin/users'],
+    queryKey: ['/api/admin/users', user?.id],
     queryFn: async () => {
       const res = await fetch(new URL('/api/admin/users', getApiUrl()).toString(), {
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) throw new Error('Failed to fetch users');
       return res.json();
@@ -106,10 +106,10 @@ export default function AdminDashboardScreen() {
   });
 
   const { data: matchesData, refetch: refetchMatches } = useQuery<{ matches: AdminMatch[] }>({
-    queryKey: ['/api/admin/matches'],
+    queryKey: ['/api/admin/matches', user?.id],
     queryFn: async () => {
       const res = await fetch(new URL('/api/admin/matches', getApiUrl()).toString(), {
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) throw new Error('Failed to fetch matches');
       return res.json();
@@ -118,10 +118,10 @@ export default function AdminDashboardScreen() {
   });
 
   const { data: datesData, refetch: refetchDates } = useQuery<{ dates: AdminDate[] }>({
-    queryKey: ['/api/admin/dates'],
+    queryKey: ['/api/admin/dates', user?.id],
     queryFn: async () => {
       const res = await fetch(new URL('/api/admin/dates', getApiUrl()).toString(), {
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) throw new Error('Failed to fetch dates');
       return res.json();
@@ -130,10 +130,10 @@ export default function AdminDashboardScreen() {
   });
 
   const { data: transactionsData, refetch: refetchTransactions } = useQuery<{ transactions: AdminTransaction[] }>({
-    queryKey: ['/api/admin/transactions'],
+    queryKey: ['/api/admin/transactions', user?.id],
     queryFn: async () => {
       const res = await fetch(new URL('/api/admin/transactions', getApiUrl()).toString(), {
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) throw new Error('Failed to fetch transactions');
       return res.json();
@@ -145,7 +145,7 @@ export default function AdminDashboardScreen() {
     mutationFn: async (userId: string) => {
       const res = await fetch(new URL(`/api/admin/users/${userId}`, getApiUrl()).toString(), {
         method: 'DELETE',
-        headers: adminHeaders,
+        headers: getAdminHeaders(),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -169,7 +169,7 @@ export default function AdminDashboardScreen() {
     mutationFn: async ({ userId, verified }: { userId: string; verified: boolean }) => {
       const res = await fetch(new URL(`/api/admin/users/${userId}/verify`, getApiUrl()).toString(), {
         method: 'PATCH',
-        headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ verified }),
       });
       if (!res.ok) throw new Error('Failed to update verification');

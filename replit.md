@@ -61,6 +61,9 @@ Preferred communication style: Simple, everyday language.
 **Key Tables**:
 - `users`: Profile data, role (host/guest), location, preferences
 - `otp_codes`: Verification codes with expiry tracking
+- `swipes`: Tracks who swiped on whom with direction (like/pass)
+- `matches`: Created when two users mutually like each other
+- `messages`: Chat messages between matched users
 
 ### Project Structure
 
@@ -122,8 +125,24 @@ assets/           # Images, fonts, icons
 
 ## Recent Changes
 
-### December 2025
+### December 2025 - Phase 1: Core Dating Features
+- **Demo Login**: Added demo login bypass for @demo.com emails (accepts any 6-digit code). Only works in development mode.
+- **Database Schema**: Added swipes, matches, and messages tables for dating functionality
+- **Seed Data**: Created 8 demo profiles (6 hosts: Sarah, Michael, Emma, James, Olivia, David; 2 guests: Alex, Sophie)
+- **Discovery API**: GET /api/discover/:userId returns profiles based on user role (Guests see Hosts, Hosts see Guests)
+- **Swipe API**: POST /api/swipe records swipes and creates matches on mutual likes
+- **Matches API**: GET /api/matches/:userId returns matches with last message and unread count
+- **Messages API**: GET/POST /api/messages for real-time chat between matched users
+- **DiscoverScreen**: Fetches real profiles, saves swipes to database, shows match celebration modal
+- **MatchesScreen**: Fetches real matches from database with conversation previews
+- **ChatScreen**: Real-time messaging with polling, ice breakers for new conversations
+
+### Previous Changes (December 2025)
 - **Database**: Configured to use external Neon database via `NEON_DATABASE_URL`
 - **Bottom Navigation**: Fixed tab bar visibility with custom labels using explicit Text components with black (#000000) inactive color and coffee brown (#6F4E37) active color
 - **Onboarding Data Fix**: Fixed bug where user profile data was being overwritten with demo data. Each onboarding screen now properly saves user selections via AuthContext.updateUser(), with final database persistence on completion
 - **UI Improvements**: Tab bar uses cream background (#FFF8F0) with brown border (#6F4E37) for clear visibility
+
+## Known Limitations (MVP)
+- **Authentication**: Current APIs accept user IDs from client. For production, implement session-based auth with server-validated identity.
+- **Real-time Chat**: Uses polling (3s interval) instead of WebSockets. Consider WebSocket upgrade for production.

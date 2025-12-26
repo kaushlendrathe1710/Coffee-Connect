@@ -1,21 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Pressable, Platform, TextInput, FlatList, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Pressable, Platform, TextInput, FlatList, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
-import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
-import { RootStackParamList, MessageData } from '@/types/navigation';
+import { Spacing, BorderRadius, Typography } from '@/constants/theme';
+import { RootStackParamList } from '@/types/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Chat'>;
 type ChatRouteProp = RouteProp<RootStackParamList, 'Chat'>;
+
+interface Message {
+  id: string;
+  content: string;
+  senderId: string;
+  read: boolean;
+  createdAt: string;
+}
 
 const ICE_BREAKERS = [
   "What's your go-to coffee order?",
@@ -24,62 +34,73 @@ const ICE_BREAKERS = [
   "Do you prefer cozy cafes or modern ones?",
 ];
 
-const MOCK_MESSAGES: MessageData[] = [
-  {
-    id: '1',
-    matchId: '1',
-    senderId: 'other',
-    text: "Hey! I noticed you're a latte lover too!",
-    createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    read: true,
-  },
-  {
-    id: '2',
-    matchId: '1',
-    senderId: 'me',
-    text: "Hi! Yes, I can't start my day without one. What's your favorite cafe?",
-    createdAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-    read: true,
-  },
-];
-
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ChatRouteProp>();
   const { theme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const flatListRef = useRef<FlatList>(null);
 
   const { matchId, matchName, matchPhoto } = route.params;
-  const [messages, setMessages] = useState<MessageData[]>(MOCK_MESSAGES);
   const [inputText, setInputText] = useState('');
-  const [showIceBreakers, setShowIceBreakers] = useState(messages.length < 3);
+  const [showIceBreakers, setShowIceBreakers] = useState(true);
 
-  const handleSend = () => {
-    if (!inputText.trim()) return;
+  // Fetch messages
+  const { data: messagesData, isLoading, refetch } = useQuery<{ messages: Message[] }>({
+    queryKey: ['/api/messages', matchId, `?userId=${user?.id}`],
+    enabled: !!matchId && !!user?.id,
+    refetchInterval: 3000, // Poll every 3 seconds for new messages
+  });
+
+  const messages = messagesData?.messages || [];
+
+  // Hide ice breakers after first few messages
+  useEffect(() => {
+    if (messages.length >= 3) {
+      setShowIceBreakers(false);
+    }
+  }, [messages.length]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages.length]);
+
+  // Send message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await apiRequest('POST', '/api/messages', {
+        matchId,
+        senderId: user?.id,
+        content,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      // Refetch messages
+      refetch();
+      // Invalidate matches to update last message
+      queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+    },
+  });
+
+  const handleSend = useCallback(() => {
+    if (!inputText.trim() || sendMessageMutation.isPending) return;
 
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
-    const newMessage: MessageData = {
-      id: `msg_${Date.now()}`,
-      matchId,
-      senderId: 'me',
-      text: inputText.trim(),
-      createdAt: new Date().toISOString(),
-      read: false,
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
+    sendMessageMutation.mutate(inputText.trim());
     setInputText('');
     setShowIceBreakers(false);
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
+  }, [inputText, sendMessageMutation]);
 
   const handleIceBreaker = (text: string) => {
     if (Platform.OS !== 'web') {
@@ -105,14 +126,14 @@ export default function ChatScreen() {
     });
   };
 
-  const renderMessage = ({ item }: { item: MessageData }) => {
-    const isMe = item.senderId === 'me';
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isMe = item.senderId === user?.id;
 
     return (
       <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.theirMessage]}>
-        {!isMe && (
+        {!isMe ? (
           <Image source={{ uri: matchPhoto }} style={styles.messageAvatar} contentFit="cover" />
-        )}
+        ) : null}
         <View
           style={[
             styles.messageBubble,
@@ -124,7 +145,7 @@ export default function ChatScreen() {
           <ThemedText
             style={[styles.messageText, { color: isMe ? theme.buttonText : theme.text }]}
           >
-            {item.text}
+            {item.content}
           </ThemedText>
           <ThemedText
             style={[
@@ -139,6 +160,16 @@ export default function ChatScreen() {
     );
   };
 
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary} />
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <KeyboardAvoidingView
@@ -146,7 +177,7 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={90}
       >
-        {messages.length >= 3 && (
+        {messages.length >= 3 ? (
           <Pressable
             style={({ pressed }) => [
               styles.planDateBanner,
@@ -160,22 +191,34 @@ export default function ChatScreen() {
             </ThemedText>
             <Feather name="chevron-right" size={18} color={theme.primary} />
           </Pressable>
+        ) : null}
+
+        {messages.length === 0 ? (
+          <View style={styles.emptyChat}>
+            <Image source={{ uri: matchPhoto }} style={styles.emptyChatPhoto} contentFit="cover" />
+            <ThemedText style={styles.emptyChatTitle}>
+              You matched with {matchName}!
+            </ThemedText>
+            <ThemedText style={[styles.emptyChatSubtitle, { color: theme.textSecondary }]}>
+              Send a message to start the conversation
+            </ThemedText>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={[
+              styles.messagesList,
+              { paddingBottom: showIceBreakers ? 80 : Spacing.md },
+            ]}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          />
         )}
 
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[
-            styles.messagesList,
-            { paddingBottom: showIceBreakers ? 80 : Spacing.md },
-          ]}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-        />
-
-        {showIceBreakers && (
+        {showIceBreakers && messages.length < 3 ? (
           <View style={styles.iceBreakersContainer}>
             <ThemedText style={[styles.iceBreakersTitle, { color: theme.textSecondary }]}>
               Ice breakers
@@ -199,7 +242,7 @@ export default function ChatScreen() {
               contentContainerStyle={styles.iceBreakersList}
             />
           </View>
-        )}
+        ) : null}
 
         <View
           style={[
@@ -216,6 +259,7 @@ export default function ChatScreen() {
               placeholderTextColor={theme.textSecondary}
               multiline
               maxLength={500}
+              onSubmitEditing={handleSend}
             />
           </View>
           <Pressable
@@ -227,13 +271,17 @@ export default function ChatScreen() {
               },
             ]}
             onPress={handleSend}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || sendMessageMutation.isPending}
           >
-            <Feather
-              name="send"
-              size={20}
-              color={inputText.trim() ? theme.buttonText : theme.textSecondary}
-            />
+            {sendMessageMutation.isPending ? (
+              <ActivityIndicator size="small" color={theme.buttonText} />
+            ) : (
+              <Feather
+                name="send"
+                size={20}
+                color={inputText.trim() ? theme.buttonText : theme.textSecondary}
+              />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -248,6 +296,11 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   planDateBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -261,6 +314,27 @@ const styles = StyleSheet.create({
   planDateText: {
     ...Typography.body,
     fontWeight: '600',
+  },
+  emptyChat: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.screenPadding,
+  },
+  emptyChatPhoto: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: Spacing.lg,
+  },
+  emptyChatTitle: {
+    ...Typography.h3,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  emptyChatSubtitle: {
+    ...Typography.body,
+    textAlign: 'center',
   },
   messagesList: {
     paddingHorizontal: Spacing.screenPadding,

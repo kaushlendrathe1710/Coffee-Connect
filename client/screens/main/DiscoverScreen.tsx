@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, Pressable, Platform, Dimensions, Animated } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { View, StyleSheet, Pressable, Platform, Dimensions, Animated, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,67 +8,106 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { BlurView } from 'expo-blur';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
-import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows, Colors } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - Spacing.screenPadding * 2;
 
-const MOCK_PROFILES = [
-  {
-    id: '1',
-    name: 'Sarah',
-    age: 28,
-    bio: 'Coffee addict and book lover. Always looking for the perfect latte spot.',
-    photos: ['https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400'],
-    coffeePreferences: ['Latte', 'Cappuccino'],
-    interests: ['Reading', 'Travel', 'Yoga'],
-    distance: 2.3,
-    role: 'host',
-  },
-  {
-    id: '2',
-    name: 'Michael',
-    age: 32,
-    bio: 'Entrepreneur by day, coffee enthusiast by all hours. Let\'s chat over espresso!',
-    photos: ['https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400'],
-    coffeePreferences: ['Espresso', 'Cold Brew'],
-    interests: ['Tech', 'Fitness', 'Music'],
-    distance: 1.5,
-    role: 'host',
-  },
-  {
-    id: '3',
-    name: 'Emma',
-    age: 26,
-    bio: 'Photographer and matcha lover. Always seeking new perspectives and great company.',
-    photos: ['https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400'],
-    coffeePreferences: ['Matcha', 'Iced Coffee'],
-    interests: ['Photography', 'Art', 'Hiking'],
-    distance: 3.8,
-    role: 'host',
-  },
-];
+interface Profile {
+  id: string;
+  name: string;
+  age: string;
+  bio: string;
+  photos: string[];
+  coffeePreferences: string[];
+  interests: string[];
+  role: 'host' | 'guest';
+  verified: boolean;
+  location: { latitude: number; longitude: number } | null;
+}
+
+interface MatchResult {
+  id: string;
+  matchedUser: {
+    id: string;
+    name: string;
+    photos: string[];
+  };
+}
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [profiles] = useState(MOCK_PROFILES);
+  const [showMatchModal, setShowMatchModal] = useState(false);
+  const [matchedUser, setMatchedUser] = useState<{ name: string; photo: string } | null>(null);
   const translateX = useRef(new Animated.Value(0)).current;
+  const matchScale = useRef(new Animated.Value(0)).current;
 
+  // Fetch discoverable profiles
+  const { data: profilesData, isLoading, refetch } = useQuery<{ profiles: Profile[] }>({
+    queryKey: ['/api/discover', user?.id],
+    enabled: !!user?.id && !!user?.role,
+  });
+
+  const profiles = profilesData?.profiles || [];
   const currentProfile = profiles[currentIndex];
 
+  // Swipe mutation
+  const swipeMutation = useMutation({
+    mutationFn: async ({ swipedId, direction }: { swipedId: string; direction: 'like' | 'pass' }) => {
+      const res = await apiRequest('POST', '/api/swipe', {
+        swiperId: user?.id,
+        swipedId,
+        direction,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.isMatch && data.match?.matchedUser) {
+        // Show match celebration
+        setMatchedUser({
+          name: data.match.matchedUser.name,
+          photo: data.match.matchedUser.photos?.[0] || '',
+        });
+        setShowMatchModal(true);
+        
+        // Animate modal
+        Animated.spring(matchScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 100,
+          useNativeDriver: true,
+        }).start();
+
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        // Invalidate matches cache
+        queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+      }
+    },
+  });
+
   const handleSwipe = useCallback((direction: 'left' | 'right') => {
+    if (!currentProfile) return;
+
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(
         direction === 'right'
@@ -83,21 +122,37 @@ export default function DiscoverScreen() {
       friction: 5,
     }).start(() => {
       translateX.setValue(0);
-      if (direction === 'right') {
-        // It's a match for demo
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
+      
+      // Record swipe
+      swipeMutation.mutate({
+        swipedId: currentProfile.id,
+        direction: direction === 'right' ? 'like' : 'pass',
+      });
+
+      // Move to next profile
+      if (currentIndex < profiles.length - 1) {
+        setCurrentIndex((prev) => prev + 1);
+      } else {
+        // Refetch when we run out of profiles
+        setCurrentIndex(0);
+        refetch();
       }
-      setCurrentIndex((prev) => (prev + 1) % profiles.length);
     });
-  }, [profiles.length, translateX]);
+  }, [currentProfile, profiles.length, translateX, swipeMutation, currentIndex, refetch]);
 
   const handleLike = () => handleSwipe('right');
   const handlePass = () => handleSwipe('left');
 
-  const handleFilters = () => {
-    navigation.navigate('Filters');
+  const handleCloseMatch = () => {
+    matchScale.setValue(0);
+    setShowMatchModal(false);
+    setMatchedUser(null);
+  };
+
+  const handleSendMessage = () => {
+    handleCloseMatch();
+    // Navigate to matches tab
+    navigation.navigate('Main', { screen: 'MatchesTab' });
   };
 
   const swipeGesture = Gesture.Pan()
@@ -134,19 +189,34 @@ export default function DiscoverScreen() {
     extrapolate: 'clamp',
   });
 
-  if (!currentProfile) {
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.loadingState, { paddingTop: insets.top + Spacing['3xl'] }]}>
+          <ThemedText style={styles.loadingText}>Finding your matches...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!currentProfile || profiles.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <View style={[styles.emptyState, { paddingTop: insets.top + Spacing['3xl'] }]}>
-          <Image
-            source={require('@assets/images/empty-matches.png')}
-            style={styles.emptyImage}
-            contentFit="contain"
-          />
+          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+            <Feather name="coffee" size={64} color={theme.primary} />
+          </View>
           <ThemedText style={styles.emptyTitle}>No more profiles</ThemedText>
           <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            Check back later for new matches
+            Check back later for new coffee dates!
           </ThemedText>
+          <Pressable
+            style={[styles.refreshButton, { backgroundColor: theme.primary }]}
+            onPress={() => refetch()}
+          >
+            <Feather name="refresh-cw" size={20} color="#FFFFFF" />
+            <ThemedText style={styles.refreshText}>Refresh</ThemedText>
+          </Pressable>
         </View>
       </ThemedView>
     );
@@ -163,15 +233,6 @@ export default function DiscoverScreen() {
           />
           <ThemedText style={styles.logoText}>Coffee Date</ThemedText>
         </View>
-        <Pressable
-          style={({ pressed }) => [
-            styles.filterButton,
-            { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.8 : 1 },
-          ]}
-          onPress={handleFilters}
-        >
-          <Feather name="sliders" size={20} color={theme.text} />
-        </Pressable>
       </View>
 
       <View style={styles.cardContainer}>
@@ -190,37 +251,48 @@ export default function DiscoverScreen() {
             />
             <View style={styles.cardOverlay}>
               <Animated.View style={[styles.stamp, styles.likeStamp, { opacity: likeOpacity }]}>
-                <ThemedText style={[styles.stampText, { color: theme.success }]}>LIKE</ThemedText>
+                <ThemedText style={[styles.stampText, { color: Colors.light.success }]}>LIKE</ThemedText>
               </Animated.View>
               <Animated.View style={[styles.stamp, styles.nopeStamp, { opacity: nopeOpacity }]}>
-                <ThemedText style={[styles.stampText, { color: theme.error }]}>NOPE</ThemedText>
+                <ThemedText style={[styles.stampText, { color: Colors.light.error }]}>NOPE</ThemedText>
               </Animated.View>
             </View>
-            <View style={styles.cardInfo}>
-              <View style={styles.cardHeader}>
-                <ThemedText style={[styles.cardName, { color: '#FFFFFF' }]}>
-                  {currentProfile.name}, {currentProfile.age}
-                </ThemedText>
-                <View style={[styles.distanceBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                  <Feather name="map-pin" size={12} color="#FFFFFF" />
-                  <ThemedText style={[styles.distanceText, { color: '#FFFFFF' }]}>
-                    {currentProfile.distance} km
-                  </ThemedText>
-                </View>
-              </View>
-              <ThemedText style={[styles.cardBio, { color: 'rgba(255,255,255,0.9)' }]} numberOfLines={2}>
-                {currentProfile.bio}
-              </ThemedText>
-              <View style={styles.tagsRow}>
-                {currentProfile.coffeePreferences.slice(0, 3).map((pref) => (
-                  <View
-                    key={pref}
-                    style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                  >
-                    <Feather name="coffee" size={12} color="#FFFFFF" />
-                    <ThemedText style={[styles.tagText, { color: '#FFFFFF' }]}>{pref}</ThemedText>
+            <View style={[styles.cardInfo, Platform.OS === 'ios' ? {} : { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+              {Platform.OS === 'ios' ? (
+                <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+              ) : null}
+              <View style={styles.cardContent}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.nameRow}>
+                    <ThemedText style={[styles.cardName, { color: '#FFFFFF' }]}>
+                      {currentProfile.name}, {currentProfile.age}
+                    </ThemedText>
+                    {currentProfile.verified ? (
+                      <View style={[styles.verifiedBadge, { backgroundColor: theme.primary }]}>
+                        <Feather name="check" size={12} color="#FFFFFF" />
+                      </View>
+                    ) : null}
                   </View>
-                ))}
+                  <View style={[styles.roleBadge, { backgroundColor: currentProfile.role === 'host' ? Colors.light.primary : theme.backgroundSecondary }]}>
+                    <ThemedText style={[styles.roleText, { color: '#FFFFFF' }]}>
+                      {currentProfile.role === 'host' ? 'Host' : 'Guest'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={[styles.cardBio, { color: 'rgba(255,255,255,0.9)' }]} numberOfLines={2}>
+                  {currentProfile.bio}
+                </ThemedText>
+                <View style={styles.tagsRow}>
+                  {currentProfile.coffeePreferences?.slice(0, 3).map((pref) => (
+                    <View
+                      key={pref}
+                      style={[styles.tag, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                    >
+                      <Feather name="coffee" size={12} color="#FFFFFF" />
+                      <ThemedText style={[styles.tagText, { color: '#FFFFFF' }]}>{pref}</ThemedText>
+                    </View>
+                  ))}
+                </View>
               </View>
             </View>
           </Animated.View>
@@ -251,6 +323,69 @@ export default function DiscoverScreen() {
           <Feather name="heart" size={28} color="#FFFFFF" />
         </Pressable>
       </View>
+
+      {/* Match Celebration Modal */}
+      <Modal
+        visible={showMatchModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseMatch}
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View 
+            style={[
+              styles.matchModal, 
+              { backgroundColor: theme.backgroundDefault, transform: [{ scale: matchScale }] }
+            ]}
+          >
+            <View style={styles.matchContent}>
+              <ThemedText style={[styles.matchTitle, { color: theme.primary }]}>
+                It's a Match!
+              </ThemedText>
+              <ThemedText style={[styles.matchSubtitle, { color: theme.textSecondary }]}>
+                You and {matchedUser?.name} liked each other
+              </ThemedText>
+              
+              <View style={styles.matchPhotos}>
+                <View style={[styles.matchPhotoContainer, Shadows.medium]}>
+                  <Image
+                    source={{ uri: user?.photos?.[0] || 'https://via.placeholder.com/100' }}
+                    style={styles.matchPhoto}
+                    contentFit="cover"
+                  />
+                </View>
+                <View style={[styles.matchHeart, { backgroundColor: theme.primary }]}>
+                  <Feather name="heart" size={24} color="#FFFFFF" />
+                </View>
+                <View style={[styles.matchPhotoContainer, Shadows.medium]}>
+                  <Image
+                    source={{ uri: matchedUser?.photo || 'https://via.placeholder.com/100' }}
+                    style={styles.matchPhoto}
+                    contentFit="cover"
+                  />
+                </View>
+              </View>
+
+              <Pressable
+                style={[styles.sendMessageButton, { backgroundColor: theme.primary }]}
+                onPress={handleSendMessage}
+              >
+                <Feather name="message-circle" size={20} color="#FFFFFF" />
+                <ThemedText style={styles.sendMessageText}>Send a Message</ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={styles.keepSwipingButton}
+                onPress={handleCloseMatch}
+              >
+                <ThemedText style={[styles.keepSwipingText, { color: theme.textSecondary }]}>
+                  Keep Swiping
+                </ThemedText>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -279,13 +414,6 @@ const styles = StyleSheet.create({
   logoText: {
     ...Typography.h3,
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.sm,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   cardContainer: {
     flex: 1,
     alignItems: 'center',
@@ -294,7 +422,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: CARD_WIDTH,
-    height: SCREEN_HEIGHT * 0.55,
+    height: SCREEN_HEIGHT * 0.58,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
   },
@@ -333,9 +461,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    overflow: 'hidden',
+  },
+  cardContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xl,
-    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -343,19 +473,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xs,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
   cardName: {
     ...Typography.h3,
   },
-  distanceBadge: {
-    flexDirection: 'row',
+  verifiedBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
+  },
+  roleBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
   },
-  distanceText: {
+  roleText: {
     ...Typography.caption,
+    fontWeight: '600',
   },
   cardBio: {
     ...Typography.body,
@@ -393,15 +533,26 @@ const styles = StyleSheet.create({
   },
   passButton: {},
   likeButton: {},
+  loadingState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...Typography.body,
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.screenPadding,
   },
-  emptyImage: {
-    width: 200,
-    height: 200,
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: Spacing.xl,
   },
   emptyTitle: {
@@ -411,5 +562,89 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     ...Typography.body,
     textAlign: 'center',
+    marginBottom: Spacing.xl,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  refreshText: {
+    ...Typography.body,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  matchModal: {
+    width: SCREEN_WIDTH - Spacing.screenPadding * 2,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+  },
+  matchContent: {
+    alignItems: 'center',
+  },
+  matchTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
+  matchSubtitle: {
+    ...Typography.body,
+    textAlign: 'center',
+    marginBottom: Spacing.xl,
+  },
+  matchPhotos: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  matchPhotoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
+  },
+  matchPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  matchHeart: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: -Spacing.md,
+    zIndex: 1,
+  },
+  sendMessageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    width: '100%',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  sendMessageText: {
+    ...Typography.body,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  keepSwipingButton: {
+    paddingVertical: Spacing.md,
+  },
+  keepSwipingText: {
+    ...Typography.body,
   },
 });

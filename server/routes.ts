@@ -109,22 +109,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Email and code are required" });
       }
 
-      const rateLimit = checkVerifyRateLimit(email);
-      if (!rateLimit.allowed) {
-        return res.status(429).json({
-          error: "Too many attempts. Your account is temporarily locked.",
-          retryAfter: rateLimit.retryAfter,
-        });
+      // Demo login bypass for testing - only works in development mode
+      const isDemoAccount = email.toLowerCase().endsWith('@demo.com') && process.env.NODE_ENV !== 'production';
+      
+      if (!isDemoAccount) {
+        const rateLimit = checkVerifyRateLimit(email);
+        if (!rateLimit.allowed) {
+          return res.status(429).json({
+            error: "Too many attempts. Your account is temporarily locked.",
+            retryAfter: rateLimit.retryAfter,
+          });
+        }
+
+        const validOtp = await storage.getValidOtp(email, code);
+
+        if (!validOtp) {
+          return res.status(400).json({ error: "Invalid or expired OTP" });
+        }
+
+        await storage.markOtpUsed(validOtp.id);
+        resetVerifyAttempts(email);
+      } else {
+        // For demo accounts, just verify code is 6 digits
+        if (!/^\d{6}$/.test(code)) {
+          return res.status(400).json({ error: "Invalid OTP format" });
+        }
       }
-
-      const validOtp = await storage.getValidOtp(email, code);
-
-      if (!validOtp) {
-        return res.status(400).json({ error: "Invalid or expired OTP" });
-      }
-
-      await storage.markOtpUsed(validOtp.id);
-      resetVerifyAttempts(email);
 
       let user = await storage.getUserByEmail(email);
 
@@ -238,6 +248,230 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error getting user:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== DISCOVERY ROUTES ====================
+
+  // Get discoverable profiles for swiping
+  app.get("/api/discover/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user || !user.role) {
+        return res.status(400).json({ error: "User not found or role not set" });
+      }
+
+      const profiles = await storage.getDiscoverableProfiles(userId, user.role);
+      
+      res.json({
+        profiles: profiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          bio: p.bio,
+          photos: p.photos,
+          coffeePreferences: p.coffeePreferences,
+          interests: p.interests,
+          role: p.role,
+          verified: p.verified,
+          location: p.locationLatitude && p.locationLongitude
+            ? { latitude: parseFloat(p.locationLatitude), longitude: parseFloat(p.locationLongitude) }
+            : null,
+        })),
+      });
+    } catch (error) {
+      console.error("Error getting discoverable profiles:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== SWIPE ROUTES ====================
+
+  // Record a swipe
+  app.post("/api/swipe", async (req: Request, res: Response) => {
+    try {
+      const { swiperId, swipedId, direction } = req.body;
+
+      if (!swiperId || !swipedId || !direction) {
+        return res.status(400).json({ error: "swiperId, swipedId, and direction are required" });
+      }
+
+      if (direction !== 'like' && direction !== 'pass') {
+        return res.status(400).json({ error: "direction must be 'like' or 'pass'" });
+      }
+
+      // Check if already swiped
+      const existingSwipe = await storage.hasSwipedOnUser(swiperId, swipedId);
+      if (existingSwipe) {
+        return res.status(400).json({ error: "Already swiped on this user" });
+      }
+
+      // Record the swipe
+      await storage.createSwipe({ swiperId, swipedId, direction });
+
+      let match = null;
+
+      // If it's a like, check for mutual match
+      if (direction === 'like') {
+        const reverseSwipe = await storage.getSwipe(swipedId, swiperId);
+        
+        if (reverseSwipe && reverseSwipe.direction === 'like') {
+          // Mutual like - create a match!
+          const existingMatch = await storage.getMatchBetweenUsers(swiperId, swipedId);
+          
+          if (!existingMatch) {
+            match = await storage.createMatch({ user1Id: swiperId, user2Id: swipedId });
+            
+            // Get the matched user's profile
+            const matchedUser = await storage.getUser(swipedId);
+            if (matchedUser) {
+              match = {
+                ...match,
+                matchedUser: {
+                  id: matchedUser.id,
+                  name: matchedUser.name,
+                  photos: matchedUser.photos,
+                },
+              };
+            }
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        isMatch: !!match,
+        match,
+      });
+    } catch (error) {
+      console.error("Error recording swipe:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== MATCHES ROUTES ====================
+
+  // Get all matches for a user
+  app.get("/api/matches/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      
+      const matchRecords = await storage.getMatchesForUser(userId);
+      
+      // Enrich matches with user data and last message
+      const enrichedMatches = await Promise.all(
+        matchRecords.map(async (match) => {
+          const otherUserId = match.user1Id === userId ? match.user2Id : match.user1Id;
+          const otherUser = await storage.getUser(otherUserId);
+          
+          // Get messages for this match
+          const matchMessages = await storage.getMessagesForMatch(match.id);
+          const lastMessage = matchMessages[matchMessages.length - 1];
+          const unreadCount = await storage.getUnreadCount(match.id, userId);
+          
+          return {
+            id: match.id,
+            matchedAt: match.createdAt,
+            otherUser: otherUser ? {
+              id: otherUser.id,
+              name: otherUser.name,
+              photos: otherUser.photos,
+              bio: otherUser.bio,
+              coffeePreferences: otherUser.coffeePreferences,
+            } : null,
+            lastMessage: lastMessage ? {
+              content: lastMessage.content,
+              senderId: lastMessage.senderId,
+              createdAt: lastMessage.createdAt,
+            } : null,
+            unreadCount,
+          };
+        })
+      );
+      
+      res.json({ matches: enrichedMatches });
+    } catch (error) {
+      console.error("Error getting matches:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== MESSAGES ROUTES ====================
+
+  // Get messages for a match
+  app.get("/api/messages/:matchId", async (req: Request, res: Response) => {
+    try {
+      const { matchId } = req.params;
+      const { userId } = req.query;
+      
+      const match = await storage.getMatch(matchId);
+      if (!match) {
+        return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Verify user is part of this match
+      if (userId && match.user1Id !== userId && match.user2Id !== userId) {
+        return res.status(403).json({ error: "Not authorized to view these messages" });
+      }
+
+      const matchMessages = await storage.getMessagesForMatch(matchId);
+      
+      // Mark messages as read if userId is provided
+      if (userId && typeof userId === 'string') {
+        await storage.markMessagesAsRead(matchId, userId);
+      }
+      
+      res.json({
+        messages: matchMessages.map(m => ({
+          id: m.id,
+          content: m.content,
+          senderId: m.senderId,
+          read: m.read,
+          createdAt: m.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error getting messages:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Send a message
+  app.post("/api/messages", async (req: Request, res: Response) => {
+    try {
+      const { matchId, senderId, content } = req.body;
+
+      if (!matchId || !senderId || !content) {
+        return res.status(400).json({ error: "matchId, senderId, and content are required" });
+      }
+
+      const match = await storage.getMatch(matchId);
+      if (!match) {
+        return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Verify sender is part of this match
+      if (match.user1Id !== senderId && match.user2Id !== senderId) {
+        return res.status(403).json({ error: "Not authorized to send messages in this match" });
+      }
+
+      const message = await storage.createMessage({ matchId, senderId, content });
+      
+      res.json({
+        success: true,
+        message: {
+          id: message.id,
+          content: message.content,
+          senderId: message.senderId,
+          read: message.read,
+          createdAt: message.createdAt,
+        },
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

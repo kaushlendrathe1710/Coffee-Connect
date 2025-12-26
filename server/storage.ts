@@ -1,6 +1,22 @@
-import { users, otpCodes, type User, type InsertUser, type OtpCode, type InsertOtp } from "@shared/schema";
+import { 
+  users, 
+  otpCodes, 
+  swipes, 
+  matches, 
+  messages,
+  type User, 
+  type InsertUser, 
+  type OtpCode, 
+  type InsertOtp,
+  type Swipe,
+  type InsertSwipe,
+  type Match,
+  type InsertMatch,
+  type Message,
+  type InsertMessage
+} from "@shared/schema";
 import { db } from "./db";
-import { eq, and, gt, lt } from "drizzle-orm";
+import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -12,6 +28,27 @@ export interface IStorage {
   getValidOtp(email: string, code: string): Promise<OtpCode | undefined>;
   markOtpUsed(id: string): Promise<void>;
   deleteExpiredOtps(): Promise<void>;
+
+  // Swipes
+  createSwipe(swipe: { swiperId: string; swipedId: string; direction: 'like' | 'pass' }): Promise<Swipe>;
+  getSwipe(swiperId: string, swipedId: string): Promise<Swipe | undefined>;
+  hasSwipedOnUser(swiperId: string, swipedId: string): Promise<boolean>;
+
+  // Matches
+  createMatch(match: InsertMatch): Promise<Match>;
+  getMatch(id: string): Promise<Match | undefined>;
+  getMatchBetweenUsers(user1Id: string, user2Id: string): Promise<Match | undefined>;
+  getMatchesForUser(userId: string): Promise<Match[]>;
+  updateMatch(id: string, updates: Partial<Match>): Promise<Match | undefined>;
+
+  // Messages
+  createMessage(message: InsertMessage): Promise<Message>;
+  getMessagesForMatch(matchId: string): Promise<Message[]>;
+  markMessagesAsRead(matchId: string, userId: string): Promise<void>;
+  getUnreadCount(matchId: string, userId: string): Promise<number>;
+
+  // Discovery
+  getDiscoverableProfiles(userId: string, role: 'host' | 'guest'): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -71,6 +108,159 @@ export class DatabaseStorage implements IStorage {
 
   async deleteExpiredOtps(): Promise<void> {
     await db.delete(otpCodes).where(lt(otpCodes.expiresAt, new Date()));
+  }
+
+  // Swipe methods
+  async createSwipe(swipe: { swiperId: string; swipedId: string; direction: 'like' | 'pass' }): Promise<Swipe> {
+    const [newSwipe] = await db
+      .insert(swipes)
+      .values(swipe)
+      .returning();
+    return newSwipe;
+  }
+
+  async getSwipe(swiperId: string, swipedId: string): Promise<Swipe | undefined> {
+    const [swipe] = await db
+      .select()
+      .from(swipes)
+      .where(
+        and(
+          eq(swipes.swiperId, swiperId),
+          eq(swipes.swipedId, swipedId)
+        )
+      );
+    return swipe || undefined;
+  }
+
+  async hasSwipedOnUser(swiperId: string, swipedId: string): Promise<boolean> {
+    const swipe = await this.getSwipe(swiperId, swipedId);
+    return !!swipe;
+  }
+
+  // Match methods
+  async createMatch(match: InsertMatch): Promise<Match> {
+    const [newMatch] = await db
+      .insert(matches)
+      .values(match)
+      .returning();
+    return newMatch;
+  }
+
+  async getMatch(id: string): Promise<Match | undefined> {
+    const [match] = await db
+      .select()
+      .from(matches)
+      .where(eq(matches.id, id));
+    return match || undefined;
+  }
+
+  async getMatchBetweenUsers(user1Id: string, user2Id: string): Promise<Match | undefined> {
+    const [match] = await db
+      .select()
+      .from(matches)
+      .where(
+        or(
+          and(eq(matches.user1Id, user1Id), eq(matches.user2Id, user2Id)),
+          and(eq(matches.user1Id, user2Id), eq(matches.user2Id, user1Id))
+        )
+      );
+    return match || undefined;
+  }
+
+  async getMatchesForUser(userId: string): Promise<Match[]> {
+    return await db
+      .select()
+      .from(matches)
+      .where(
+        and(
+          or(eq(matches.user1Id, userId), eq(matches.user2Id, userId)),
+          eq(matches.status, 'active')
+        )
+      )
+      .orderBy(desc(matches.createdAt));
+  }
+
+  async updateMatch(id: string, updates: Partial<Match>): Promise<Match | undefined> {
+    const [match] = await db
+      .update(matches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(matches.id, id))
+      .returning();
+    return match || undefined;
+  }
+
+  // Message methods
+  async createMessage(message: InsertMessage): Promise<Message> {
+    const [newMessage] = await db
+      .insert(messages)
+      .values(message)
+      .returning();
+    return newMessage;
+  }
+
+  async getMessagesForMatch(matchId: string): Promise<Message[]> {
+    return await db
+      .select()
+      .from(messages)
+      .where(eq(messages.matchId, matchId))
+      .orderBy(asc(messages.createdAt));
+  }
+
+  async markMessagesAsRead(matchId: string, userId: string): Promise<void> {
+    await db
+      .update(messages)
+      .set({ read: true })
+      .where(
+        and(
+          eq(messages.matchId, matchId),
+          ne(messages.senderId, userId),
+          eq(messages.read, false)
+        )
+      );
+  }
+
+  async getUnreadCount(matchId: string, userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.matchId, matchId),
+          ne(messages.senderId, userId),
+          eq(messages.read, false)
+        )
+      );
+    return result[0]?.count || 0;
+  }
+
+  // Discovery - get profiles the user can swipe on
+  async getDiscoverableProfiles(userId: string, userRole: 'host' | 'guest'): Promise<User[]> {
+    // Get IDs of users already swiped on
+    const swipedUsers = await db
+      .select({ swipedId: swipes.swipedId })
+      .from(swipes)
+      .where(eq(swipes.swiperId, userId));
+
+    const swipedIds = swipedUsers.map(s => s.swipedId);
+    
+    // Guests see Hosts, Hosts see Guests
+    const targetRole = userRole === 'guest' ? 'host' : 'guest';
+
+    // Build the query
+    let query = db
+      .select()
+      .from(users)
+      .where(
+        and(
+          ne(users.id, userId),
+          eq(users.role, targetRole),
+          eq(users.onboardingCompleted, true),
+          swipedIds.length > 0 ? notInArray(users.id, swipedIds) : undefined
+        )
+      )
+      .limit(20);
+
+    return await query;
   }
 }
 

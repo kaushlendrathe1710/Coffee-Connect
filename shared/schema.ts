@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, jsonb, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -36,6 +36,41 @@ export const otpCodes = pgTable("otp_codes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Swipes table - tracks who swiped on whom
+export const swipes = pgTable("swipes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  swiperId: varchar("swiper_id").notNull().references(() => users.id),
+  swipedId: varchar("swiped_id").notNull().references(() => users.id),
+  direction: text("direction").$type<'like' | 'pass'>().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Matches table - created when two users mutually like each other
+export const matches = pgTable("matches", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  user1Id: varchar("user1_id").notNull().references(() => users.id),
+  user2Id: varchar("user2_id").notNull().references(() => users.id),
+  status: text("status").$type<'active' | 'unmatched' | 'blocked'>().default('active'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Messages table - chat messages between matched users
+export const messages = pgTable("messages", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  matchId: varchar("match_id").notNull().references(() => matches.id),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   name: true,
@@ -48,7 +83,30 @@ export const insertOtpSchema = createInsertSchema(otpCodes).pick({
   expiresAt: true,
 });
 
+export const insertSwipeSchema = createInsertSchema(swipes).pick({
+  swiperId: true,
+  swipedId: true,
+  direction: true,
+});
+
+export const insertMatchSchema = createInsertSchema(matches).pick({
+  user1Id: true,
+  user2Id: true,
+});
+
+export const insertMessageSchema = createInsertSchema(messages).pick({
+  matchId: true,
+  senderId: true,
+  content: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOtp = z.infer<typeof insertOtpSchema>;
 export type OtpCode = typeof otpCodes.$inferSelect;
+export type InsertSwipe = z.infer<typeof insertSwipeSchema>;
+export type Swipe = typeof swipes.$inferSelect;
+export type InsertMatch = z.infer<typeof insertMatchSchema>;
+export type Match = typeof matches.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;

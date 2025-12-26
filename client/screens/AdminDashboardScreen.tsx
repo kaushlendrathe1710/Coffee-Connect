@@ -81,22 +81,14 @@ export default function AdminDashboardScreen() {
     'x-admin-email': user?.email || '',
   });
 
-  // Debug logging
-  console.log('AdminDashboard user:', { id: user?.id, email: user?.email, role: user?.role });
-  console.log('Query enabled:', !!user?.id && user?.role === 'admin');
-
-  const { data: statsData, refetch: refetchStats, error: statsError, isLoading: statsLoading } = useQuery<{ stats: PlatformStats }>({
+  const { data: statsData, refetch: refetchStats } = useQuery<{ stats: PlatformStats }>({
     queryKey: ['/api/admin/stats', user?.id],
     queryFn: async () => {
-      console.log('Fetching admin stats with headers:', getAdminHeaders());
       const res = await fetch(new URL('/api/admin/stats', getApiUrl()).toString(), {
         headers: getAdminHeaders(),
       });
-      console.log('Admin stats response status:', res.status);
       if (!res.ok) throw new Error('Failed to fetch stats');
-      const data = await res.json();
-      console.log('Admin stats data:', data);
-      return data;
+      return res.json();
     },
     enabled: !!user?.id && user?.role === 'admin',
     staleTime: 0,
@@ -528,8 +520,8 @@ const styles = StyleSheet.create({
   },
   tabBarContent: {
     paddingHorizontal: Spacing.md,
-    paddingRight: Spacing.xl,
-    gap: Spacing.xs,
+    paddingRight: Spacing["2xl"],
+    gap: Spacing.sm,
   },
   tab: {
     flexDirection: 'row',

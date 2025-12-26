@@ -279,7 +279,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User not found or role not set" });
       }
 
-      const profiles = await storage.getDiscoverableProfiles(userId, user.role);
+      // Admin users cannot use discovery - they manage the platform
+      if (user.role === 'admin') {
+        return res.json({ profiles: [] });
+      }
+
+      const profiles = await storage.getDiscoverableProfiles(userId, user.role as 'host' | 'guest');
       
       res.json({
         profiles: profiles.map(p => ({

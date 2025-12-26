@@ -20,6 +20,9 @@ export const users = pgTable("users", {
   locationLatitude: text("location_latitude"),
   locationLongitude: text("location_longitude"),
   verified: boolean("verified").default(false),
+  verificationPhoto: text("verification_photo"),
+  verificationStatus: text("verification_status").$type<'none' | 'pending' | 'approved' | 'rejected'>().default('none'),
+  verificationRejectedReason: text("verification_rejected_reason"),
   onboardingCompleted: boolean("onboarding_completed").default(false),
   isProtected: boolean("is_protected").default(false),
   stripeCustomerId: text("stripe_customer_id"),
@@ -233,6 +236,20 @@ export const typingStatus = pgTable("typing_status", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Verification requests table - tracks verification submissions
+export const verificationRequests = pgTable("verification_requests", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  selfiePhoto: text("selfie_photo").notNull(),
+  status: text("status").$type<'pending' | 'approved' | 'rejected'>().default('pending'),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  rejectedReason: text("rejected_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  reviewedAt: timestamp("reviewed_at"),
+});
+
 // User filters table - stores discovery preferences
 export const userFilters = pgTable("user_filters", {
   id: varchar("id")
@@ -283,6 +300,11 @@ export const insertUserFiltersSchema = createInsertSchema(userFilters).pick({
   availabilityDays: true,
 });
 
+export const insertVerificationRequestSchema = createInsertSchema(verificationRequests).pick({
+  userId: true,
+  selfiePhoto: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOtp = z.infer<typeof insertOtpSchema>;
@@ -308,3 +330,5 @@ export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
 export type TypingStatus = typeof typingStatus.$inferSelect;
 export type UserFilters = typeof userFilters.$inferSelect;
 export type InsertUserFilters = z.infer<typeof insertUserFiltersSchema>;
+export type VerificationRequest = typeof verificationRequests.$inferSelect;
+export type InsertVerificationRequest = z.infer<typeof insertVerificationRequestSchema>;

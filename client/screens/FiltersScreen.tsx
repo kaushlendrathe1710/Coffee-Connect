@@ -1,31 +1,90 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Pressable, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/contexts/AuthContext';
 import { Spacing, BorderRadius, Typography } from '@/constants/theme';
+import { apiRequest } from '@/lib/query-client';
 
-const DISTANCE_OPTIONS = ['5 km', '10 km', '25 km', '50 km', 'Any'];
-const AGE_RANGES = ['18-25', '25-35', '35-45', '45+', 'Any'];
+const DISTANCE_OPTIONS = [
+  { label: '5 km', value: 5 },
+  { label: '10 km', value: 10 },
+  { label: '25 km', value: 25 },
+  { label: '50 km', value: 50 },
+  { label: 'Any', value: 999 },
+];
+
+const AGE_MIN_OPTIONS = [18, 21, 25, 30, 35, 40];
+const AGE_MAX_OPTIONS = [25, 30, 35, 40, 50, 99];
+
+interface Filters {
+  minAge: number;
+  maxAge: number;
+  maxDistance: number;
+  interests: string[];
+  availabilityDays: string[];
+}
+
+const DEFAULT_FILTERS: Filters = {
+  minAge: 18,
+  maxAge: 99,
+  maxDistance: 50,
+  interests: [],
+  availabilityDays: [],
+};
 
 export default function FiltersScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [distance, setDistance] = useState('25 km');
-  const [ageRange, setAgeRange] = useState('Any');
+  const [minAge, setMinAge] = useState(DEFAULT_FILTERS.minAge);
+  const [maxAge, setMaxAge] = useState(DEFAULT_FILTERS.maxAge);
+  const [maxDistance, setMaxDistance] = useState(DEFAULT_FILTERS.maxDistance);
   const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
+
+  const { data: filtersData, isLoading } = useQuery<{ filters: Filters }>({
+    queryKey: ['/api/filters', user?.id],
+    enabled: !!user?.id,
+  });
+
+  useEffect(() => {
+    if (filtersData?.filters) {
+      setMinAge(filtersData.filters.minAge || DEFAULT_FILTERS.minAge);
+      setMaxAge(filtersData.filters.maxAge || DEFAULT_FILTERS.maxAge);
+      setMaxDistance(filtersData.filters.maxDistance || DEFAULT_FILTERS.maxDistance);
+    }
+  }, [filtersData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (filters: Partial<Filters>) => {
+      const res = await apiRequest('POST', `/api/filters/${user?.id}`, filters);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/filters'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/discover'] });
+    },
+  });
 
   const handleApply = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    saveMutation.mutate({
+      minAge,
+      maxAge,
+      maxDistance,
+    });
     navigation.goBack();
   };
 
@@ -33,10 +92,21 @@ export default function FiltersScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setDistance('25 km');
-    setAgeRange('Any');
+    setMinAge(DEFAULT_FILTERS.minAge);
+    setMaxAge(DEFAULT_FILTERS.maxAge);
+    setMaxDistance(DEFAULT_FILTERS.maxDistance);
     setShowVerifiedOnly(false);
   };
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary} />
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -45,16 +115,16 @@ export default function FiltersScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Distance</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Maximum Distance</ThemedText>
           <View style={styles.optionsRow}>
             {DISTANCE_OPTIONS.map((option) => (
               <Pressable
-                key={option}
+                key={option.value}
                 style={({ pressed }) => [
                   styles.option,
                   {
-                    backgroundColor: distance === option ? theme.primary : theme.backgroundSecondary,
-                    borderColor: distance === option ? theme.primary : theme.border,
+                    backgroundColor: maxDistance === option.value ? theme.primary : theme.backgroundSecondary,
+                    borderColor: maxDistance === option.value ? theme.primary : theme.border,
                     opacity: pressed ? 0.8 : 1,
                   },
                 ]}
@@ -62,16 +132,16 @@ export default function FiltersScreen() {
                   if (Platform.OS !== 'web') {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }
-                  setDistance(option);
+                  setMaxDistance(option.value);
                 }}
               >
                 <ThemedText
                   style={[
                     styles.optionText,
-                    { color: distance === option ? theme.buttonText : theme.text },
+                    { color: maxDistance === option.value ? theme.buttonText : theme.text },
                   ]}
                 >
-                  {option}
+                  {option.label}
                 </ThemedText>
               </Pressable>
             ))}
@@ -79,16 +149,16 @@ export default function FiltersScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Age Range</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Minimum Age</ThemedText>
           <View style={styles.optionsRow}>
-            {AGE_RANGES.map((option) => (
+            {AGE_MIN_OPTIONS.map((age) => (
               <Pressable
-                key={option}
+                key={age}
                 style={({ pressed }) => [
                   styles.option,
                   {
-                    backgroundColor: ageRange === option ? theme.primary : theme.backgroundSecondary,
-                    borderColor: ageRange === option ? theme.primary : theme.border,
+                    backgroundColor: minAge === age ? theme.primary : theme.backgroundSecondary,
+                    borderColor: minAge === age ? theme.primary : theme.border,
                     opacity: pressed ? 0.8 : 1,
                   },
                 ]}
@@ -96,16 +166,56 @@ export default function FiltersScreen() {
                   if (Platform.OS !== 'web') {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }
-                  setAgeRange(option);
+                  setMinAge(age);
+                  if (maxAge < age) {
+                    setMaxAge(age);
+                  }
                 }}
               >
                 <ThemedText
                   style={[
                     styles.optionText,
-                    { color: ageRange === option ? theme.buttonText : theme.text },
+                    { color: minAge === age ? theme.buttonText : theme.text },
                   ]}
                 >
-                  {option}
+                  {age}+
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.sectionTitle}>Maximum Age</ThemedText>
+          <View style={styles.optionsRow}>
+            {AGE_MAX_OPTIONS.map((age) => (
+              <Pressable
+                key={age}
+                style={({ pressed }) => [
+                  styles.option,
+                  {
+                    backgroundColor: maxAge === age ? theme.primary : theme.backgroundSecondary,
+                    borderColor: maxAge === age ? theme.primary : theme.border,
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setMaxAge(age);
+                  if (minAge > age) {
+                    setMinAge(age);
+                  }
+                }}
+              >
+                <ThemedText
+                  style={[
+                    styles.optionText,
+                    { color: maxAge === age ? theme.buttonText : theme.text },
+                  ]}
+                >
+                  {age === 99 ? 'Any' : `${age}`}
                 </ThemedText>
               </Pressable>
             ))}
@@ -145,9 +255,24 @@ export default function FiltersScreen() {
                 },
               ]}
             >
-              {showVerifiedOnly && <Feather name="check" size={16} color={theme.buttonText} />}
+              {showVerifiedOnly ? <Feather name="check" size={16} color={theme.buttonText} /> : null}
             </View>
           </Pressable>
+        </View>
+
+        <View style={[styles.summaryCard, { backgroundColor: theme.backgroundSecondary }]}>
+          <ThemedText style={[styles.summaryTitle, { color: theme.textSecondary }]}>
+            Current Filters
+          </ThemedText>
+          <ThemedText style={styles.summaryText}>
+            Age: {minAge} - {maxAge === 99 ? 'Any' : maxAge}
+          </ThemedText>
+          <ThemedText style={styles.summaryText}>
+            Distance: {maxDistance === 999 ? 'Any' : `Up to ${maxDistance} km`}
+          </ThemedText>
+          {showVerifiedOnly ? (
+            <ThemedText style={styles.summaryText}>Verified profiles only</ThemedText>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -172,10 +297,15 @@ export default function FiltersScreen() {
             { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
           ]}
           onPress={handleApply}
+          disabled={saveMutation.isPending}
         >
-          <ThemedText style={[styles.applyButtonText, { color: theme.buttonText }]}>
-            Apply Filters
-          </ThemedText>
+          {saveMutation.isPending ? (
+            <ActivityIndicator size="small" color={theme.buttonText} />
+          ) : (
+            <ThemedText style={[styles.applyButtonText, { color: theme.buttonText }]}>
+              Apply Filters
+            </ThemedText>
+          )}
         </Pressable>
       </View>
     </ThemedView>
@@ -185,6 +315,11 @@ export default function FiltersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     paddingHorizontal: Spacing.screenPadding,
@@ -246,6 +381,21 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  summaryCard: {
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.md,
+  },
+  summaryTitle: {
+    ...Typography.caption,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  summaryText: {
+    ...Typography.body,
+    marginBottom: 4,
   },
   footer: {
     position: 'absolute',

@@ -22,6 +22,7 @@ import TermsOfServiceScreen from '@/screens/TermsOfServiceScreen';
 import PrivacyPolicyScreen from '@/screens/PrivacyPolicyScreen';
 import SafetyPrivacyScreen from '@/screens/SafetyPrivacyScreen';
 import HelpSupportScreen from '@/screens/HelpSupportScreen';
+import VerificationScreen from '@/screens/VerificationScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -154,6 +155,13 @@ export default function RootStackNavigator() {
             component={HelpSupportScreen}
             options={{
               headerTitle: 'Help & Support',
+            }}
+          />
+          <Stack.Screen
+            name="Verification"
+            component={VerificationScreen}
+            options={{
+              headerTitle: 'Verify Profile',
             }}
           />
         </>

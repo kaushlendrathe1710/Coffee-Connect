@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== DISCOVERY ROUTES ====================
 
-  // Get discoverable profiles for swiping
+  // Get discoverable profiles for swiping (now uses user's saved filters)
   app.get("/api/discover/:userId", async (req: Request, res: Response) => {
     try {
       const { userId } = req.params;
@@ -306,7 +306,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ profiles: [] });
       }
 
-      const profiles = await storage.getDiscoverableProfiles(userId, user.role as 'host' | 'guest');
+      // Get user's filters and apply them
+      const filters = await storage.getUserFilters(userId);
+      const profiles = await storage.getFilteredProfiles(userId, user.role as 'host' | 'guest', filters || undefined);
       
       res.json({
         profiles: profiles.map(p => ({
@@ -319,6 +321,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           interests: p.interests,
           role: p.role,
           verified: p.verified,
+          rating: p.rating,
+          ratingCount: p.ratingCount,
+          hostRate: p.hostRate,
           location: p.locationLatitude && p.locationLongitude
             ? { latitude: parseFloat(p.locationLatitude), longitude: parseFloat(p.locationLongitude) }
             : null,
@@ -1504,6 +1509,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating report:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== VERIFICATION ROUTES ====================
+
+  // Submit verification request (user takes selfie)
+  app.post("/api/verification/submit", async (req: Request, res: Response) => {
+    try {
+      const { userId, selfiePhoto } = req.body;
+
+      if (!userId || !selfiePhoto) {
+        return res.status(400).json({ error: "userId and selfiePhoto are required" });
+      }
+
+      // Check if user already has a pending verification
+      const existingRequest = await storage.getVerificationRequestForUser(userId);
+      if (existingRequest && existingRequest.status === 'pending') {
+        return res.status(400).json({ error: "You already have a pending verification request" });
+      }
+
+      // Create verification request
+      const request = await storage.createVerificationRequest({
+        userId,
+        selfiePhoto,
+      });
+
+      // Update user's verification status
+      await storage.updateUser(userId, {
+        verificationPhoto: selfiePhoto,
+        verificationStatus: 'pending',
+      });
+
+      res.json({ success: true, request });
+    } catch (error) {
+      console.error("Error submitting verification:", error);
+      res.status(500).json({ error: "Failed to submit verification request" });
+    }
+  });
+
+  // Get verification status for a user
+  app.get("/api/verification/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const request = await storage.getVerificationRequestForUser(userId);
+
+      res.json({
+        verified: user.verified,
+        verificationStatus: user.verificationStatus || 'none',
+        verificationPhoto: user.verificationPhoto,
+        rejectedReason: user.verificationRejectedReason,
+        latestRequest: request ? {
+          id: request.id,
+          status: request.status,
+          rejectedReason: request.rejectedReason,
+          createdAt: request.createdAt,
+          reviewedAt: request.reviewedAt,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error getting verification status:", error);
+      res.status(500).json({ error: "Failed to get verification status" });
+    }
+  });
+
+  // Admin: Get pending verification requests
+  app.get("/api/admin/verifications", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const requests = await storage.getPendingVerificationRequests();
+      const enrichedRequests = await Promise.all(
+        requests.map(async (r) => {
+          const user = await storage.getUser(r.userId);
+          return {
+            id: r.id,
+            user: user ? {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              photos: user.photos,
+            } : null,
+            selfiePhoto: r.selfiePhoto,
+            status: r.status,
+            createdAt: r.createdAt,
+          };
+        })
+      );
+      res.json({ verifications: enrichedRequests });
+    } catch (error) {
+      console.error("Error getting verifications:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Review verification request
+  app.patch("/api/admin/verifications/:requestId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { requestId } = req.params;
+      const { status, rejectedReason } = req.body;
+      const adminId = req.headers['x-admin-id'] as string;
+
+      if (!status || !['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: "Valid status (approved/rejected) is required" });
+      }
+
+      const request = await storage.getVerificationRequest(requestId);
+      if (!request) {
+        return res.status(404).json({ error: "Verification request not found" });
+      }
+
+      // Update verification request
+      const updated = await storage.updateVerificationRequest(requestId, {
+        status,
+        rejectedReason: status === 'rejected' ? rejectedReason : null,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      });
+
+      // Update user's verification status
+      await storage.updateUser(request.userId, {
+        verified: status === 'approved',
+        verificationStatus: status,
+        verificationRejectedReason: status === 'rejected' ? rejectedReason : null,
+      });
+
+      res.json({ success: true, verification: updated });
+    } catch (error) {
+      console.error("Error reviewing verification:", error);
+      res.status(500).json({ error: "Failed to review verification" });
     }
   });
 

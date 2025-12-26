@@ -107,6 +107,13 @@ export default function SettingsScreen() {
     navigation.navigate('BlockedUsers');
   };
 
+  const handleVerification = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    navigation.navigate('Verification');
+  };
+
   const handleTermsOfService = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -196,6 +203,7 @@ export default function SettingsScreen() {
     {
       title: 'Account',
       items: [
+        { icon: 'shield', label: 'Verify Profile', type: 'link', onPress: handleVerification },
         { icon: 'slash', label: 'Blocked Users', type: 'link', onPress: handleBlockedUsers },
         { icon: 'file-text', label: 'Terms of Service', type: 'link', onPress: handleTermsOfService },
         { icon: 'lock', label: 'Privacy Policy', type: 'link', onPress: handlePrivacyPolicy },

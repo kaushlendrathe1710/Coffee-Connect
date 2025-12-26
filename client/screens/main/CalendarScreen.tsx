@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Pressable, Platform, ScrollView, ActivityIndicator, RefreshControl, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { AnimatedEmptyState } from '@/components/AnimatedEmptyState';
+import { ReviewModal } from '@/components/ReviewModal';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
@@ -45,6 +46,10 @@ export default function CalendarScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [selectedDateForReview, setSelectedDateForReview] = useState<CoffeeDateData | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery<{ dates: CoffeeDateData[] }>({
     queryKey: ['/api/coffee-dates', user?.id],
@@ -132,7 +137,13 @@ export default function CalendarScreen() {
     return user?.role === 'host' ? date.guest : date.host;
   };
 
-  const queryClient = useQueryClient();
+  const handleOpenReview = (date: CoffeeDateData) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedDateForReview(date);
+    setReviewModalVisible(true);
+  };
 
   const acceptDateMutation = useMutation({
     mutationFn: async ({ dateId, status }: { dateId: string; status: string }) => {
@@ -384,6 +395,20 @@ export default function CalendarScreen() {
               <ThemedText style={[styles.paymentBadgeText, { color: theme.success }]}>Paid</ThemedText>
             </View>
           )}
+
+          {/* Leave review button for completed dates */}
+          {date.status === 'completed' && (
+            <Pressable
+              style={[styles.reviewButton, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleOpenReview(date);
+              }}
+            >
+              <Feather name="star" size={14} color={theme.primary} />
+              <ThemedText style={[styles.reviewButtonText, { color: theme.primary }]}>Leave Review</ThemedText>
+            </Pressable>
+          )}
         </View>
         <Feather name="chevron-right" size={20} color={theme.textSecondary} />
       </Pressable>
@@ -472,6 +497,20 @@ export default function CalendarScreen() {
           </View>
         ) : null}
       </ScrollView>
+
+      {selectedDateForReview ? (
+        <ReviewModal
+          visible={reviewModalVisible}
+          onClose={() => {
+            setReviewModalVisible(false);
+            setSelectedDateForReview(null);
+          }}
+          coffeeDateId={selectedDateForReview.id}
+          reviewerId={user?.id || ''}
+          reviewedId={user?.role === 'host' ? selectedDateForReview.guest?.id || '' : selectedDateForReview.host?.id || ''}
+          reviewedName={user?.role === 'host' ? selectedDateForReview.guest?.name || '' : selectedDateForReview.host?.name || ''}
+        />
+      ) : null}
     </ThemedView>
   );
 }
@@ -646,6 +685,21 @@ const styles = StyleSheet.create({
   },
   paymentBadgeText: {
     ...Typography.caption,
+    fontWeight: '600',
+  },
+  reviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.sm,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+  },
+  reviewButtonText: {
+    ...Typography.small,
     fontWeight: '600',
   },
 });

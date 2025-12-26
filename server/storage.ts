@@ -12,6 +12,7 @@ import {
   pushTokens,
   typingStatus,
   userFilters,
+  verificationRequests,
   type User, 
   type InsertUser, 
   type OtpCode, 
@@ -36,7 +37,9 @@ import {
   type InsertPushToken,
   type TypingStatus,
   type UserFilters,
-  type InsertUserFilters
+  type InsertUserFilters,
+  type VerificationRequest,
+  type InsertVerificationRequest
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql, gte, inArray } from "drizzle-orm";
@@ -120,6 +123,13 @@ export interface IStorage {
 
   // Discovery with filters
   getFilteredProfiles(userId: string, userRole: 'host' | 'guest', filters?: UserFilters): Promise<User[]>;
+
+  // Verification
+  createVerificationRequest(request: InsertVerificationRequest): Promise<VerificationRequest>;
+  getVerificationRequest(id: string): Promise<VerificationRequest | undefined>;
+  getPendingVerificationRequests(): Promise<VerificationRequest[]>;
+  getVerificationRequestForUser(userId: string): Promise<VerificationRequest | undefined>;
+  updateVerificationRequest(id: string, updates: Partial<VerificationRequest>): Promise<VerificationRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -914,6 +924,51 @@ export class DatabaseStorage implements IStorage {
           eq(messages.read, false)
         )
       );
+  }
+
+  // ==================== VERIFICATION ====================
+
+  async createVerificationRequest(request: InsertVerificationRequest): Promise<VerificationRequest> {
+    const [verification] = await db
+      .insert(verificationRequests)
+      .values(request)
+      .returning();
+    return verification;
+  }
+
+  async getVerificationRequest(id: string): Promise<VerificationRequest | undefined> {
+    const [verification] = await db
+      .select()
+      .from(verificationRequests)
+      .where(eq(verificationRequests.id, id));
+    return verification || undefined;
+  }
+
+  async getPendingVerificationRequests(): Promise<VerificationRequest[]> {
+    return await db
+      .select()
+      .from(verificationRequests)
+      .where(eq(verificationRequests.status, 'pending'))
+      .orderBy(asc(verificationRequests.createdAt));
+  }
+
+  async getVerificationRequestForUser(userId: string): Promise<VerificationRequest | undefined> {
+    const [verification] = await db
+      .select()
+      .from(verificationRequests)
+      .where(eq(verificationRequests.userId, userId))
+      .orderBy(desc(verificationRequests.createdAt))
+      .limit(1);
+    return verification || undefined;
+  }
+
+  async updateVerificationRequest(id: string, updates: Partial<VerificationRequest>): Promise<VerificationRequest | undefined> {
+    const [verification] = await db
+      .update(verificationRequests)
+      .set(updates)
+      .where(eq(verificationRequests.id, id))
+      .returning();
+    return verification || undefined;
   }
 }
 

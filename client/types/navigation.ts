@@ -19,6 +19,7 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   SafetyPrivacy: undefined;
   HelpSupport: undefined;
+  Verification: undefined;
 };
 
 export type AuthStackParamList = {

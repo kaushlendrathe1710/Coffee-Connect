@@ -1895,6 +1895,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== PUSH NOTIFICATIONS ROUTES ====================
+
+  // Register push token
+  app.post("/api/push/register", async (req: Request, res: Response) => {
+    try {
+      const { userId, pushToken } = req.body;
+
+      if (!userId || !pushToken) {
+        return res.status(400).json({ error: "userId and pushToken are required" });
+      }
+
+      const updated = await storage.updateUser(userId, { 
+        pushToken, 
+        notificationsEnabled: true 
+      });
+      
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error registering push token:", error);
+      res.status(500).json({ error: "Failed to register push token" });
+    }
+  });
+
+  // Unregister push token
+  app.post("/api/push/unregister", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+
+      const updated = await storage.updateUser(userId, { 
+        pushToken: null, 
+        notificationsEnabled: false 
+      });
+      
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error unregistering push token:", error);
+      res.status(500).json({ error: "Failed to unregister push token" });
+    }
+  });
+
+  // Toggle notifications
+  app.patch("/api/users/:userId/notifications", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { enabled } = req.body;
+
+      const updated = await storage.updateUser(userId, { 
+        notificationsEnabled: !!enabled 
+      });
+      
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({ success: true, notificationsEnabled: updated.notificationsEnabled });
+    } catch (error) {
+      console.error("Error toggling notifications:", error);
+      res.status(500).json({ error: "Failed to toggle notifications" });
+    }
+  });
+
   // ==================== PROFILE PREVIEW ROUTE ====================
 
   // Get profile preview (how others see your profile)

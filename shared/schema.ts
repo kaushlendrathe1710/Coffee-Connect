@@ -31,6 +31,8 @@ export const users = pgTable("users", {
   rating: real("rating"),
   ratingCount: integer("rating_count").default(0),
   darkMode: boolean("dark_mode").default(false),
+  pushToken: text("push_token"),
+  notificationsEnabled: boolean("notifications_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

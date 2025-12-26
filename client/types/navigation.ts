@@ -20,6 +20,7 @@ export type RootStackParamList = {
   SafetyPrivacy: undefined;
   HelpSupport: undefined;
   Verification: undefined;
+  ProfilePreview: undefined;
 };
 
 export type AuthStackParamList = {

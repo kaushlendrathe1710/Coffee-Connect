@@ -23,6 +23,7 @@ import PrivacyPolicyScreen from '@/screens/PrivacyPolicyScreen';
 import SafetyPrivacyScreen from '@/screens/SafetyPrivacyScreen';
 import HelpSupportScreen from '@/screens/HelpSupportScreen';
 import VerificationScreen from '@/screens/VerificationScreen';
+import ProfilePreviewScreen from '@/screens/ProfilePreviewScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -162,6 +163,13 @@ export default function RootStackNavigator() {
             component={VerificationScreen}
             options={{
               headerTitle: 'Verify Profile',
+            }}
+          />
+          <Stack.Screen
+            name="ProfilePreview"
+            component={ProfilePreviewScreen}
+            options={{
+              headerTitle: 'Profile Preview',
             }}
           />
         </>

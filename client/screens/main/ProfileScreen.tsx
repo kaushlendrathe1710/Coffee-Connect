@@ -118,8 +118,16 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleProfilePreview = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    navigation.navigate('ProfilePreview');
+  };
+
   const menuItems = [
     { icon: 'edit-2', label: 'Edit Profile', onPress: handleEditProfile },
+    { icon: 'eye', label: 'Preview Profile', onPress: handleProfilePreview },
     { icon: 'settings', label: 'Settings', onPress: handleSettings },
     { icon: 'shield', label: 'Safety & Privacy', onPress: () => {} },
     { icon: 'credit-card', label: 'Payment History', onPress: () => {} },

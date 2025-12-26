@@ -59,12 +59,13 @@ Preferred communication style: Simple, everyday language.
 - Schema defined in `shared/schema.ts` (shared between client/server)
 
 **Key Tables**:
-- `users`: Profile data, role (host/guest), location, preferences
+- `users`: Profile data, role (host/guest/admin), location, preferences, isProtected flag
 - `otp_codes`: Verification codes with expiry tracking
 - `swipes`: Tracks who swiped on whom with direction (like/pass)
 - `matches`: Created when two users mutually like each other
 - `messages`: Chat messages between matched users
 - `coffee_dates`: Scheduled coffee dates with status tracking and payment info
+- `wallet_transactions`: Ledger of all wallet credits and debits
 
 ### Project Structure
 
@@ -125,6 +126,27 @@ assets/           # Images, fonts, icons
 - `SMTP_*`: Email configuration for OTP delivery
 
 ## Recent Changes
+
+### December 2025 - Phase 7: Admin Dashboard System
+- **Admin Role**: Added `admin` role type and `isProtected` boolean field to users schema
+- **Protected Super Admin**: kaushlendra.k12@fms.edu is auto-created on server start as protected admin (cannot be deleted)
+- **Admin Dashboard**: Dedicated AdminDashboardScreen with 5 management tabs:
+  - Stats: Platform metrics (users, hosts, guests, admins, matches, dates, messages, revenue)
+  - Users: View all users, verify/unverify accounts, delete non-protected users, see wallet balances
+  - Matches: View all matches with participant details
+  - Dates: View all coffee dates with status, payment info, participants
+  - Transactions: View all wallet transactions with user details
+- **Admin API Routes** (protected by requireAdmin middleware):
+  - GET /api/admin/stats - Platform statistics
+  - GET /api/admin/users - All users list
+  - GET /api/admin/matches - All matches list  
+  - GET /api/admin/dates - All coffee dates list
+  - GET /api/admin/transactions - All wallet transactions
+  - DELETE /api/admin/users/:userId - Delete user (protected users exempt)
+  - PATCH /api/admin/users/:userId/role - Change user role
+  - PATCH /api/admin/users/:userId/verify - Toggle user verification
+- **Navigation**: Admin users bypass onboarding and route directly to Admin Dashboard
+- **Security**: Admin routes require x-admin-id and x-admin-email headers matching database records
 
 ### December 2025 - Phase 6: Dual-Confirmation "Date is Set" Flow
 - **Dual Confirmation**: Both Guest AND Host must click "Date is Set" before wallet is charged
@@ -201,5 +223,11 @@ assets/           # Images, fonts, icons
 - **UI Improvements**: Tab bar uses cream background (#FFF8F0) with brown border (#6F4E37) for clear visibility
 
 ## Known Limitations (MVP)
-- **Authentication**: Current APIs accept user IDs from client. For production, implement session-based auth with server-validated identity.
+- **Authentication**: Current APIs accept user IDs from client. For production, implement JWT/session-based auth with server-validated identity.
+- **Admin Security**: Admin routes use header-based auth (x-admin-id + x-admin-email). For production, implement signed JWT tokens issued at OTP verification.
 - **Real-time Chat**: Uses polling (3s interval) instead of WebSockets. Consider WebSocket upgrade for production.
+
+## Admin Access
+- **Super Admin Email**: kaushlendra.k12@fms.edu
+- **Access**: Login with super admin email via OTP → automatically routes to Admin Dashboard
+- **Protection**: Super admin cannot be deleted, role cannot be changed

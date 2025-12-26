@@ -166,12 +166,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? { latitude: parseFloat(user.locationLatitude), longitude: parseFloat(user.locationLongitude) }
             : null,
           verified: user.verified,
+          isProtected: user.isProtected,
           onboardingCompleted: user.onboardingCompleted,
           createdAt: user.createdAt,
           walletBalance: user.walletBalance || 0,
           hostRate: user.hostRate || 0,
         },
-        isNewUser: !user.onboardingCompleted,
+        isNewUser: !user.onboardingCompleted && user.role !== 'admin',
       });
     } catch (error) {
       console.error("Error verifying OTP:", error);
@@ -214,6 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? { latitude: parseFloat(user.locationLatitude), longitude: parseFloat(user.locationLongitude) }
             : null,
           verified: user.verified,
+          isProtected: user.isProtected,
           onboardingCompleted: user.onboardingCompleted,
           createdAt: user.createdAt,
           walletBalance: user.walletBalance || 0,
@@ -252,8 +254,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? { latitude: parseFloat(user.locationLatitude), longitude: parseFloat(user.locationLongitude) }
             : null,
           verified: user.verified,
+          isProtected: user.isProtected,
           onboardingCompleted: user.onboardingCompleted,
           createdAt: user.createdAt,
+          walletBalance: user.walletBalance || 0,
+          hostRate: user.hostRate || 0,
         },
       });
     } catch (error) {
@@ -1157,16 +1162,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })();
 
-  // Middleware to check if user is admin
+  // Middleware to check if user is admin with enhanced security
+  // Note: For production, this should use JWT/session-based auth
   const requireAdmin = async (req: Request, res: Response, next: Function) => {
     const adminId = req.headers['x-admin-id'] as string;
-    if (!adminId) {
+    const adminEmail = req.headers['x-admin-email'] as string;
+    
+    if (!adminId || !adminEmail) {
       return res.status(401).json({ error: 'Admin authentication required' });
     }
+    
     const admin = await storage.getUser(adminId);
     if (!admin || admin.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
+    
+    // Additional verification: email must match stored email
+    if (admin.email.toLowerCase() !== adminEmail.toLowerCase()) {
+      return res.status(403).json({ error: 'Authentication mismatch' });
+    }
+    
     (req as any).admin = admin;
     next();
   };

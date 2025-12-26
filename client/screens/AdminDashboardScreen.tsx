@@ -76,7 +76,10 @@ export default function AdminDashboardScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('stats');
   const [refreshing, setRefreshing] = useState(false);
 
-  const adminHeaders = { 'x-admin-id': user?.id || '' };
+  const adminHeaders = { 
+    'x-admin-id': user?.id || '',
+    'x-admin-email': user?.email || '',
+  };
 
   const { data: statsData, refetch: refetchStats } = useQuery<{ stats: PlatformStats }>({
     queryKey: ['/api/admin/stats'],

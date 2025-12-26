@@ -15,29 +15,36 @@ declare module "http" {
 
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
-    const origins = new Set<string>();
-
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
-
     const origin = req.header("origin");
+    
+    // In production, allow all origins (mobile apps don't have origin headers)
+    // In development, restrict to Replit domains
+    if (process.env.NODE_ENV === 'production') {
+      res.header("Access-Control-Allow-Origin", origin || "*");
+    } else {
+      const origins = new Set<string>();
 
-    if (origin && origins.has(origin)) {
-      res.header("Access-Control-Allow-Origin", origin);
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
-      );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
-      res.header("Access-Control-Allow-Credentials", "true");
+      if (process.env.REPLIT_DEV_DOMAIN) {
+        origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+      }
+
+      if (process.env.REPLIT_DOMAINS) {
+        process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
+          origins.add(`https://${d.trim()}`);
+        });
+      }
+
+      if (origin && origins.has(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+      }
     }
+    
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    );
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Credentials", "true");
 
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);

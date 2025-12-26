@@ -6,7 +6,7 @@ export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
   Chat: { matchId: string; matchName: string; matchPhoto: string };
-  DatePlanning: { matchId: string; matchName: string };
+  DatePlanning: { matchId: string; matchName: string; matchPhoto?: string };
   CafeMap: { onSelectCafe: (cafe: CafeData) => void };
   UserProfile: { userId: string };
   EditProfile: undefined;

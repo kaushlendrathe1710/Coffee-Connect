@@ -114,7 +114,7 @@ export default function ChatScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    navigation.navigate('DatePlanning', { matchId, matchName });
+    navigation.navigate('DatePlanning', { matchId, matchName, matchPhoto });
   };
 
   const formatTime = (dateString: string) => {

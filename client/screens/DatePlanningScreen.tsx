@@ -1,34 +1,107 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Platform, ScrollView, TextInput } from 'react-native';
+import { View, StyleSheet, Pressable, Platform, ScrollView, TextInput, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { RootStackParamList, CafeData } from '@/types/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'DatePlanning'>;
 type DatePlanningRouteProp = RouteProp<RootStackParamList, 'DatePlanning'>;
 
-const DATES = ['Today', 'Tomorrow', 'This Weekend'];
-const TIMES = ['Morning (9-11am)', 'Lunch (12-2pm)', 'Afternoon (3-5pm)', 'Evening (6-8pm)'];
+const TIME_SLOTS = [
+  '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+  '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM'
+];
 
 export default function DatePlanningScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<DatePlanningRouteProp>();
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const { matchId, matchName } = route.params;
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { matchId, matchName, matchPhoto } = route.params;
+
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedCafe, setSelectedCafe] = useState<CafeData | null>(null);
   const [notes, setNotes] = useState('');
+
+  const proposeDateMutation = useMutation({
+    mutationFn: async (data: {
+      matchId: string;
+      proposedBy: string;
+      scheduledDate: string;
+      cafeName?: string;
+      cafeAddress?: string;
+      cafeLatitude?: string;
+      cafeLongitude?: string;
+      notes?: string;
+    }) => {
+      return apiRequest('POST', '/api/coffee-dates', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/coffee-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/messages', matchId] });
+      
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      
+      Alert.alert(
+        'Date Proposed!',
+        `Your coffee date proposal has been sent to ${matchName}. They'll be notified to accept or suggest a different time.`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    },
+    onError: (error) => {
+      Alert.alert('Error', 'Failed to propose date. Please try again.');
+      console.error('Propose date error:', error);
+    },
+  });
+
+  const generateNextDays = () => {
+    const days: Date[] = [];
+    const today = new Date();
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      days.push(date);
+    }
+    return days;
+  };
+
+  const nextDays = generateNextDays();
+
+  const formatDayName = (date: Date) => {
+    return date.toLocaleDateString('en-US', { weekday: 'short' });
+  };
+
+  const formatDayNumber = (date: Date) => {
+    return date.getDate().toString();
+  };
+
+  const formatMonth = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'short' });
+  };
+
+  const isSameDay = (date1: Date | null, date2: Date) => {
+    if (!date1) return false;
+    return date1.toDateString() === date2.toDateString();
+  };
 
   const handleSelectCafe = () => {
     if (Platform.OS !== 'web') {
@@ -41,150 +114,219 @@ export default function DatePlanningScreen() {
     });
   };
 
-  const handleConfirm = () => {
-    if (!selectedDate || !selectedTime || !selectedCafe) return;
-
-    if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const handlePropose = () => {
+    if (!selectedDate || !selectedTime || !user?.id) {
+      Alert.alert('Missing Information', 'Please select a date and time for your coffee date.');
+      return;
     }
 
-    // In real app, save the date to backend
+    const timeParts = selectedTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!timeParts) return;
+
+    let hours = parseInt(timeParts[1]);
+    const minutes = parseInt(timeParts[2]);
+    const period = timeParts[3].toUpperCase();
+
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+
+    const scheduledDate = new Date(selectedDate);
+    scheduledDate.setHours(hours, minutes, 0, 0);
+
+    proposeDateMutation.mutate({
+      matchId,
+      proposedBy: user.id,
+      scheduledDate: scheduledDate.toISOString(),
+      cafeName: selectedCafe?.name || undefined,
+      cafeAddress: selectedCafe?.address || undefined,
+      cafeLatitude: selectedCafe?.latitude?.toString() || undefined,
+      cafeLongitude: selectedCafe?.longitude?.toString() || undefined,
+      notes: notes || undefined,
+    });
+  };
+
+  const handleClose = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     navigation.goBack();
   };
 
-  const isValid = selectedDate && selectedTime && selectedCafe;
+  const isValid = selectedDate && selectedTime;
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+        <Pressable onPress={handleClose} style={styles.closeButton}>
+          <Feather name="x" size={24} color={theme.text} />
+        </Pressable>
+        <ThemedText style={styles.headerTitle}>Plan a Date</ThemedText>
+        <View style={styles.closeButton} />
+      </View>
+
+      <KeyboardAwareScrollViewCompat
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
-        <ThemedText style={styles.sectionTitle}>When would you like to meet?</ThemedText>
-        <View style={styles.optionsGrid}>
-          {DATES.map((date) => (
-            <Pressable
-              key={date}
-              style={({ pressed }) => [
-                styles.option,
-                {
-                  backgroundColor: selectedDate === date ? theme.primary : theme.backgroundSecondary,
-                  borderColor: selectedDate === date ? theme.primary : theme.border,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-              onPress={() => {
-                if (Platform.OS !== 'web') {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                setSelectedDate(date);
-              }}
-            >
-              <ThemedText
-                style={[
-                  styles.optionText,
-                  { color: selectedDate === date ? theme.buttonText : theme.text },
-                ]}
-              >
-                {date}
-              </ThemedText>
-            </Pressable>
-          ))}
+        <View style={styles.matchInfo}>
+          <Image
+            source={{ uri: matchPhoto || 'https://via.placeholder.com/64' }}
+            style={styles.matchImage}
+            contentFit="cover"
+          />
+          <ThemedText style={styles.matchName}>Coffee date with {matchName}</ThemedText>
         </View>
 
-        <ThemedText style={styles.sectionTitle}>What time works best?</ThemedText>
-        <View style={styles.optionsGrid}>
-          {TIMES.map((time) => (
-            <Pressable
-              key={time}
-              style={({ pressed }) => [
-                styles.option,
-                styles.timeOption,
-                {
-                  backgroundColor: selectedTime === time ? theme.primary : theme.backgroundSecondary,
-                  borderColor: selectedTime === time ? theme.primary : theme.border,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-              onPress={() => {
-                if (Platform.OS !== 'web') {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                setSelectedTime(time);
-              }}
-            >
-              <ThemedText
-                style={[
-                  styles.optionText,
-                  { color: selectedTime === time ? theme.buttonText : theme.text },
-                ]}
-              >
-                {time}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
-
-        <ThemedText style={styles.sectionTitle}>Choose a cafe</ThemedText>
-        {selectedCafe ? (
-          <Pressable
-            style={({ pressed }) => [
-              styles.cafeCard,
-              { backgroundColor: theme.cardBackground, opacity: pressed ? 0.9 : 1 },
-              Shadows.small,
-            ]}
-            onPress={handleSelectCafe}
+        <View style={styles.section}>
+          <ThemedText style={styles.sectionTitle}>Select a Day</ThemedText>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.daysContainer}
           >
-            <View style={[styles.cafeIcon, { backgroundColor: theme.secondary }]}>
-              <Feather name="coffee" size={24} color={theme.primary} />
-            </View>
-            <View style={styles.cafeInfo}>
-              <ThemedText style={styles.cafeName}>{selectedCafe.name}</ThemedText>
-              <View style={styles.cafeDetails}>
-                <Feather name="map-pin" size={12} color={theme.textSecondary} />
-                <ThemedText style={[styles.cafeAddress, { color: theme.textSecondary }]}>
-                  {selectedCafe.address}
+            {nextDays.map((date, index) => (
+              <Pressable
+                key={index}
+                style={[
+                  styles.dayCard,
+                  { 
+                    backgroundColor: isSameDay(selectedDate, date) ? theme.primary : theme.cardBackground,
+                    borderColor: isSameDay(selectedDate, date) ? theme.primary : theme.border,
+                  },
+                  Shadows.small,
+                ]}
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setSelectedDate(date);
+                }}
+              >
+                <ThemedText 
+                  style={[
+                    styles.dayName, 
+                    { color: isSameDay(selectedDate, date) ? '#FFFFFF' : theme.textSecondary }
+                  ]}
+                >
+                  {formatDayName(date)}
                 </ThemedText>
-              </View>
-              {selectedCafe.rating && (
-                <View style={styles.cafeRating}>
-                  <Feather name="star" size={12} color={theme.warning} />
-                  <ThemedText style={styles.ratingText}>{selectedCafe.rating}</ThemedText>
-                </View>
-              )}
-            </View>
-            <Feather name="edit-2" size={18} color={theme.textSecondary} />
-          </Pressable>
-        ) : (
-          <Pressable
-            style={({ pressed }) => [
-              styles.selectCafeButton,
-              { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, opacity: pressed ? 0.8 : 1 },
-            ]}
-            onPress={handleSelectCafe}
-          >
-            <Feather name="map-pin" size={24} color={theme.primary} />
-            <ThemedText style={[styles.selectCafeText, { color: theme.primary }]}>
-              Browse nearby cafes
-            </ThemedText>
-          </Pressable>
-        )}
+                <ThemedText 
+                  style={[
+                    styles.dayNumber, 
+                    { color: isSameDay(selectedDate, date) ? '#FFFFFF' : theme.text }
+                  ]}
+                >
+                  {formatDayNumber(date)}
+                </ThemedText>
+                <ThemedText 
+                  style={[
+                    styles.monthName, 
+                    { color: isSameDay(selectedDate, date) ? '#FFFFFF' : theme.textSecondary }
+                  ]}
+                >
+                  {formatMonth(date)}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
 
-        <ThemedText style={styles.sectionTitle}>Any special requests?</ThemedText>
-        <TextInput
-          style={[
-            styles.notesInput,
-            { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border },
-          ]}
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="e.g., I'd like a quiet corner..."
-          placeholderTextColor={theme.textSecondary}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-        />
-      </ScrollView>
+        <View style={styles.section}>
+          <ThemedText style={styles.sectionTitle}>Select a Time</ThemedText>
+          <View style={styles.timeSlotsGrid}>
+            {TIME_SLOTS.map((time) => (
+              <Pressable
+                key={time}
+                style={[
+                  styles.timeSlot,
+                  { 
+                    backgroundColor: selectedTime === time ? theme.primary : theme.cardBackground,
+                    borderColor: selectedTime === time ? theme.primary : theme.border,
+                  },
+                ]}
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setSelectedTime(time);
+                }}
+              >
+                <ThemedText 
+                  style={[
+                    styles.timeText, 
+                    { color: selectedTime === time ? '#FFFFFF' : theme.text }
+                  ]}
+                >
+                  {time}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.sectionTitle}>Choose a cafe (Optional)</ThemedText>
+          {selectedCafe ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.cafeCard,
+                { backgroundColor: theme.cardBackground, opacity: pressed ? 0.9 : 1 },
+                Shadows.small,
+              ]}
+              onPress={handleSelectCafe}
+            >
+              <View style={[styles.cafeIcon, { backgroundColor: theme.secondary }]}>
+                <Feather name="coffee" size={24} color={theme.primary} />
+              </View>
+              <View style={styles.cafeInfo}>
+                <ThemedText style={styles.cafeName}>{selectedCafe.name}</ThemedText>
+                <View style={styles.cafeDetails}>
+                  <Feather name="map-pin" size={12} color={theme.textSecondary} />
+                  <ThemedText style={[styles.cafeAddress, { color: theme.textSecondary }]}>
+                    {selectedCafe.address}
+                  </ThemedText>
+                </View>
+                {selectedCafe.rating ? (
+                  <View style={styles.cafeRating}>
+                    <Feather name="star" size={12} color={theme.warning} />
+                    <ThemedText style={styles.ratingText}>{selectedCafe.rating}</ThemedText>
+                  </View>
+                ) : null}
+              </View>
+              <Feather name="edit-2" size={18} color={theme.textSecondary} />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.selectCafeButton,
+                { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, opacity: pressed ? 0.8 : 1 },
+              ]}
+              onPress={handleSelectCafe}
+            >
+              <Feather name="map-pin" size={24} color={theme.primary} />
+              <ThemedText style={[styles.selectCafeText, { color: theme.primary }]}>
+                Browse nearby cafes
+              </ThemedText>
+            </Pressable>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.sectionTitle}>Add a Note (Optional)</ThemedText>
+          <View style={[styles.notesContainer, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+            <TextInput
+              style={[styles.notesInput, { color: theme.text }]}
+              placeholder="Looking forward to meeting you..."
+              placeholderTextColor={theme.textSecondary}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+        </View>
+      </KeyboardAwareScrollViewCompat>
 
       <View
         style={[
@@ -197,24 +339,24 @@ export default function DatePlanningScreen() {
             styles.confirmButton,
             {
               backgroundColor: isValid ? theme.primary : theme.backgroundTertiary,
-              opacity: pressed && isValid ? 0.8 : 1,
+              opacity: (pressed && isValid) || proposeDateMutation.isPending ? 0.8 : 1,
             },
           ]}
-          onPress={handleConfirm}
-          disabled={!isValid}
+          onPress={handlePropose}
+          disabled={!isValid || proposeDateMutation.isPending}
         >
           <Feather
-            name="check"
+            name="send"
             size={20}
-            color={isValid ? theme.buttonText : theme.textSecondary}
+            color={isValid ? '#FFFFFF' : theme.textSecondary}
           />
           <ThemedText
             style={[
               styles.confirmButtonText,
-              { color: isValid ? theme.buttonText : theme.textSecondary },
+              { color: isValid ? '#FFFFFF' : theme.textSecondary },
             ]}
           >
-            Send Date Request
+            {proposeDateMutation.isPending ? 'Sending...' : 'Propose Date'}
           </ThemedText>
         </Pressable>
       </View>
@@ -226,32 +368,85 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.screenPadding,
+    paddingBottom: Spacing.md,
+  },
+  headerTitle: {
+    ...Typography.h3,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   content: {
     paddingHorizontal: Spacing.screenPadding,
-    paddingTop: Spacing.lg,
+  },
+  matchInfo: {
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  matchImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: Spacing.md,
+  },
+  matchName: {
+    ...Typography.h4,
+    textAlign: 'center',
+  },
+  section: {
+    marginBottom: Spacing.xl,
   },
   sectionTitle: {
-    ...Typography.h4,
+    ...Typography.body,
+    fontWeight: '600',
     marginBottom: Spacing.md,
-    marginTop: Spacing.lg,
   },
-  optionsGrid: {
+  daysContainer: {
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  dayCard: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    minWidth: 70,
+  },
+  dayName: {
+    ...Typography.caption,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  dayNumber: {
+    ...Typography.h3,
+    fontWeight: '700',
+  },
+  monthName: {
+    ...Typography.caption,
+    marginTop: 2,
+  },
+  timeSlotsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
   },
-  option: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
+  timeSlot: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
   },
-  timeOption: {
-    width: '48%',
-    alignItems: 'center',
-  },
-  optionText: {
-    ...Typography.body,
+  timeText: {
+    ...Typography.small,
     fontWeight: '500',
   },
   selectCafeButton: {
@@ -308,13 +503,14 @@ const styles = StyleSheet.create({
     ...Typography.small,
     fontWeight: '600',
   },
-  notesInput: {
-    height: 80,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+  notesContainer: {
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
+    padding: Spacing.md,
+  },
+  notesInput: {
     ...Typography.body,
+    minHeight: 80,
   },
   footer: {
     position: 'absolute',

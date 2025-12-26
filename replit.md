@@ -64,6 +64,7 @@ Preferred communication style: Simple, everyday language.
 - `swipes`: Tracks who swiped on whom with direction (like/pass)
 - `matches`: Created when two users mutually like each other
 - `messages`: Chat messages between matched users
+- `coffee_dates`: Scheduled coffee dates with status tracking and payment info
 
 ### Project Structure
 
@@ -124,6 +125,17 @@ assets/           # Images, fonts, icons
 - `SMTP_*`: Email configuration for OTP delivery
 
 ## Recent Changes
+
+### December 2025 - Phase 2: Calendar & Date Planning
+- **Database Schema**: Added `coffee_dates` table with fields for scheduling, cafe location, payment tracking, and status
+- **Coffee Dates API**:
+  - GET /api/coffee-dates/:userId - Returns all dates for a user with enriched host/guest data
+  - GET /api/coffee-dates/match/:matchId - Returns dates for a specific match
+  - POST /api/coffee-dates - Create a date proposal (auto-derives hostId/guestId from user roles)
+  - PATCH /api/coffee-dates/:dateId - Update date status (accept, decline, confirm, cancel)
+- **CalendarScreen**: Shows upcoming and past dates fetched from API, with AnimatedEmptyState and pull-to-refresh
+- **DatePlanningScreen**: Date picker with 14-day selection, time slots, optional cafe selection, notes field, submits to API
+- **Design Polish**: Added GlassCard, ConfettiEffect (match celebration), and AnimatedEmptyState components
 
 ### December 2025 - Phase 1: Core Dating Features
 - **Demo Login**: Added demo login bypass for @demo.com emails (accepts any 6-digit code). Only works in development mode.

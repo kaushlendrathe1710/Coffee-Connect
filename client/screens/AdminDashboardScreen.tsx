@@ -81,16 +81,26 @@ export default function AdminDashboardScreen() {
     'x-admin-email': user?.email || '',
   });
 
-  const { data: statsData, refetch: refetchStats } = useQuery<{ stats: PlatformStats }>({
+  // Debug logging
+  console.log('AdminDashboard user:', { id: user?.id, email: user?.email, role: user?.role });
+  console.log('Query enabled:', !!user?.id && user?.role === 'admin');
+
+  const { data: statsData, refetch: refetchStats, error: statsError, isLoading: statsLoading } = useQuery<{ stats: PlatformStats }>({
     queryKey: ['/api/admin/stats', user?.id],
     queryFn: async () => {
+      console.log('Fetching admin stats with headers:', getAdminHeaders());
       const res = await fetch(new URL('/api/admin/stats', getApiUrl()).toString(), {
         headers: getAdminHeaders(),
       });
+      console.log('Admin stats response status:', res.status);
       if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
+      const data = await res.json();
+      console.log('Admin stats data:', data);
+      return data;
     },
     enabled: !!user?.id && user?.role === 'admin',
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const { data: usersData, refetch: refetchUsers } = useQuery<{ users: AdminUser[] }>({

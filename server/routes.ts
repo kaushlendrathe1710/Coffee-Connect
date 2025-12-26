@@ -267,6 +267,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete user account (self-deletion)
+  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(id);
+
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isProtected) {
+        return res.status(403).json({ error: "Protected users cannot be deleted" });
+      }
+
+      await storage.deleteUser(id);
+      res.json({ success: true, message: "Account deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ==================== DISCOVERY ROUTES ====================
 
   // Get discoverable profiles for swiping

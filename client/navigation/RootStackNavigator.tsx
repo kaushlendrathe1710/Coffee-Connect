@@ -17,6 +17,11 @@ import EditProfileScreen from '@/screens/EditProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import FiltersScreen from '@/screens/FiltersScreen';
 import WalletScreen from '@/screens/WalletScreen';
+import BlockedUsersScreen from '@/screens/BlockedUsersScreen';
+import TermsOfServiceScreen from '@/screens/TermsOfServiceScreen';
+import PrivacyPolicyScreen from '@/screens/PrivacyPolicyScreen';
+import SafetyPrivacyScreen from '@/screens/SafetyPrivacyScreen';
+import HelpSupportScreen from '@/screens/HelpSupportScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -114,6 +119,41 @@ export default function RootStackNavigator() {
             component={WalletScreen}
             options={{
               headerTitle: 'My Wallet',
+            }}
+          />
+          <Stack.Screen
+            name="BlockedUsers"
+            component={BlockedUsersScreen}
+            options={{
+              headerTitle: 'Blocked Users',
+            }}
+          />
+          <Stack.Screen
+            name="TermsOfService"
+            component={TermsOfServiceScreen}
+            options={{
+              headerTitle: 'Terms of Service',
+            }}
+          />
+          <Stack.Screen
+            name="PrivacyPolicy"
+            component={PrivacyPolicyScreen}
+            options={{
+              headerTitle: 'Privacy Policy',
+            }}
+          />
+          <Stack.Screen
+            name="SafetyPrivacy"
+            component={SafetyPrivacyScreen}
+            options={{
+              headerTitle: 'Safety & Privacy',
+            }}
+          />
+          <Stack.Screen
+            name="HelpSupport"
+            component={HelpSupportScreen}
+            options={{
+              headerTitle: 'Help & Support',
             }}
           />
         </>

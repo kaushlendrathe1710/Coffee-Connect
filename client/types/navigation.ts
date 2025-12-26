@@ -14,6 +14,11 @@ export type RootStackParamList = {
   Settings: undefined;
   Filters: undefined;
   Wallet: undefined;
+  BlockedUsers: undefined;
+  TermsOfService: undefined;
+  PrivacyPolicy: undefined;
+  SafetyPrivacy: undefined;
+  HelpSupport: undefined;
 };
 
 export type AuthStackParamList = {

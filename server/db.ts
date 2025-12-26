@@ -12,5 +12,10 @@ if (!databaseUrl) {
   );
 }
 
-export const pool = new Pool({ connectionString: databaseUrl });
+// Enable SSL for production (required for Neon)
+const isProduction = process.env.NODE_ENV === 'production';
+export const pool = new Pool({ 
+  connectionString: databaseUrl,
+  ssl: isProduction ? { rejectUnauthorized: false } : undefined
+});
 export const db = drizzle(pool, { schema });

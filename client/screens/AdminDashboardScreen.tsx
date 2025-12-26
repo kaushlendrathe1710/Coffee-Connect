@@ -228,7 +228,7 @@ export default function AdminDashboardScreen() {
     { key: 'users', label: 'Users', icon: 'users' },
     { key: 'matches', label: 'Matches', icon: 'heart' },
     { key: 'dates', label: 'Dates', icon: 'calendar' },
-    { key: 'transactions', label: 'Payments', icon: 'credit-card' },
+    { key: 'transactions', label: 'Pay', icon: 'credit-card' },
   ];
 
   const renderStats = () => (
@@ -511,8 +511,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   tabBarContent: {
-    paddingHorizontal: Spacing.screenPadding,
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingRight: Spacing.xl,
+    gap: Spacing.xs,
   },
   tab: {
     flexDirection: 'row',

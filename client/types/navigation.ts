@@ -5,6 +5,7 @@ import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigat
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
+  AdminDashboard: undefined;
   Chat: { matchId: string; matchName: string; matchPhoto: string };
   DatePlanning: { matchId: string; matchName: string; matchPhoto?: string; selectedCafe?: CafeData; selectedDateISO?: string; selectedTime?: string; notes?: string };
   CafeMap: { returnTo: 'DatePlanning'; matchId: string; matchName: string; matchPhoto?: string; selectedDateISO?: string; selectedTime?: string; notes?: string };

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type UserRole = 'host' | 'guest';
+export type UserRole = 'host' | 'guest' | 'admin';
 
 export interface UserProfile {
   id: string;
@@ -17,6 +17,7 @@ export interface UserProfile {
   role: UserRole;
   location?: { latitude: number; longitude: number };
   verified: boolean;
+  isProtected?: boolean;
   createdAt: string;
   walletBalance?: number;
   hostRate?: number;

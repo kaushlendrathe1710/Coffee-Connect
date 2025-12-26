@@ -8,6 +8,7 @@ import { useTheme } from '@/hooks/useTheme';
 
 import AuthStackNavigator from '@/navigation/AuthStackNavigator';
 import MainTabNavigator from '@/navigation/MainTabNavigator';
+import AdminDashboardScreen from '@/screens/AdminDashboardScreen';
 import ChatScreen from '@/screens/ChatScreen';
 import DatePlanningScreen from '@/screens/DatePlanningScreen';
 import CafeMapScreen from '@/screens/CafeMapScreen';
@@ -21,8 +22,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions();
-  const { isAuthenticated, isLoading, isOnboarded } = useAuth();
+  const { isAuthenticated, isLoading, isOnboarded, user } = useAuth();
   const { theme } = useTheme();
+
+  const isAdmin = user?.role === 'admin';
 
   if (isLoading) {
     return (
@@ -34,10 +37,16 @@ export default function RootStackNavigator() {
 
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      {!isAuthenticated || !isOnboarded ? (
+      {!isAuthenticated || (!isOnboarded && !isAdmin) ? (
         <Stack.Screen
           name="Auth"
           component={AuthStackNavigator}
+          options={{ headerShown: false }}
+        />
+      ) : isAdmin ? (
+        <Stack.Screen
+          name="AdminDashboard"
+          component={AdminDashboardScreen}
           options={{ headerShown: false }}
         />
       ) : (

@@ -37,7 +37,14 @@ interface Message {
   content: string;
   senderId: string;
   read: boolean;
+  readAt: string | null;
   createdAt: string;
+}
+
+interface TypingStatus {
+  matchId: string;
+  userId: string;
+  isTyping: boolean;
 }
 
 const ICE_BREAKERS = [
@@ -59,6 +66,7 @@ export default function ChatScreen() {
   const { matchId, matchName, matchPhoto } = route.params;
   const [inputText, setInputText] = useState('');
   const [showIceBreakers, setShowIceBreakers] = useState(true);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch messages
   const { data: messagesData, isLoading, refetch } = useQuery<{ messages: Message[] }>({
@@ -75,6 +83,64 @@ export default function ChatScreen() {
     enabled: !!matchId,
     refetchInterval: 5000, // Poll to check if other party confirmed
   });
+
+  // Fetch typing status
+  const { data: typingData } = useQuery<{ status: TypingStatus | null }>({
+    queryKey: ['/api/typing', matchId],
+    enabled: !!matchId,
+    refetchInterval: 2000, // Poll every 2 seconds
+  });
+
+  const isPartnerTyping = typingData?.status?.isTyping && typingData?.status?.userId !== user?.id;
+
+  // Typing status mutation
+  const updateTypingMutation = useMutation({
+    mutationFn: async (isTyping: boolean) => {
+      if (!user?.id) return;
+      await apiRequest('PATCH', '/api/typing', {
+        matchId,
+        userId: user.id,
+        isTyping,
+      });
+    },
+  });
+
+  // Cleanup typing status on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      // Reset typing status on unmount
+      if (user?.id) {
+        updateTypingMutation.mutate(false);
+      }
+    };
+  }, []);
+
+  // Mark messages as read mutation with deduplication
+  const markReadMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) return;
+      await apiRequest('POST', `/api/messages/${matchId}/read`, {
+        userId: user.id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+    },
+  });
+
+  // Ref to track if we've already marked read for current message count
+  const lastMarkedReadRef = useRef<number>(0);
+
+  // Mark messages as read when viewing chat (deduplicated)
+  useEffect(() => {
+    if (matchId && user?.id && messages.length > lastMarkedReadRef.current && !markReadMutation.isPending) {
+      lastMarkedReadRef.current = messages.length;
+      markReadMutation.mutate();
+    }
+  }, [matchId, user?.id, messages.length]);
 
   // Get the most recent accepted date (only show confirmation UI for accepted dates)
   const activeDate = datesData?.dates?.find(
@@ -176,10 +242,40 @@ export default function ChatScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
+    // Stop typing indicator
+    updateTypingMutation.mutate(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
     sendMessageMutation.mutate(inputText.trim());
     setInputText('');
     setShowIceBreakers(false);
-  }, [inputText, sendMessageMutation]);
+  }, [inputText, sendMessageMutation, updateTypingMutation]);
+
+  const handleTextChange = useCallback((text: string) => {
+    setInputText(text);
+    
+    // Guard against undefined user
+    if (!user?.id) return;
+
+    // Send typing indicator
+    if (text.length > 0) {
+      updateTypingMutation.mutate(true);
+
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      // Stop typing after 3 seconds of no input
+      typingTimeoutRef.current = setTimeout(() => {
+        updateTypingMutation.mutate(false);
+      }, 3000);
+    } else {
+      updateTypingMutation.mutate(false);
+    }
+  }, [updateTypingMutation, user?.id]);
 
   const handleIceBreaker = (text: string) => {
     if (Platform.OS !== 'web') {
@@ -207,6 +303,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.senderId === user?.id;
+    const isRead = item.read || item.readAt;
 
     return (
       <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.theirMessage]}>
@@ -226,14 +323,24 @@ export default function ChatScreen() {
           >
             {item.content}
           </ThemedText>
-          <ThemedText
-            style={[
-              styles.messageTime,
-              { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary },
-            ]}
-          >
-            {formatTime(item.createdAt)}
-          </ThemedText>
+          <View style={styles.messageFooter}>
+            <ThemedText
+              style={[
+                styles.messageTime,
+                { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary },
+              ]}
+            >
+              {formatTime(item.createdAt)}
+            </ThemedText>
+            {isMe ? (
+              <Feather 
+                name={isRead ? "check-circle" : "check"} 
+                size={12} 
+                color={isRead ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'} 
+                style={styles.readReceipt}
+              />
+            ) : null}
+          </View>
         </View>
       </View>
     );
@@ -390,11 +497,24 @@ export default function ChatScreen() {
             { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom + Spacing.sm },
           ]}
         >
+          {isPartnerTyping ? (
+            <View style={[styles.typingIndicator, { backgroundColor: theme.backgroundSecondary }]}>
+              <Image source={{ uri: matchPhoto }} style={styles.typingAvatar} contentFit="cover" />
+              <View style={styles.typingDots}>
+                <View style={[styles.typingDot, { backgroundColor: theme.textSecondary }]} />
+                <View style={[styles.typingDot, { backgroundColor: theme.textSecondary }]} />
+                <View style={[styles.typingDot, { backgroundColor: theme.textSecondary }]} />
+              </View>
+              <ThemedText style={[styles.typingText, { color: theme.textSecondary }]}>
+                {matchName.split(' ')[0]} is typing...
+              </ThemedText>
+            </View>
+          ) : null}
           <View style={[styles.inputWrapper, { backgroundColor: theme.backgroundSecondary }]}>
             <TextInput
               style={[styles.input, { color: theme.text }]}
               value={inputText}
-              onChangeText={setInputText}
+              onChangeText={handleTextChange}
               placeholder="Type a message..."
               placeholderTextColor={theme.textSecondary}
               multiline
@@ -568,8 +688,46 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     ...Typography.caption,
+  },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     marginTop: 4,
-    alignSelf: 'flex-end',
+    gap: 4,
+  },
+  readReceipt: {
+    marginLeft: 2,
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    marginBottom: Spacing.sm,
+    alignSelf: 'flex-start',
+    marginLeft: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  typingAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  typingDots: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    opacity: 0.6,
+  },
+  typingText: {
+    ...Typography.caption,
+    fontStyle: 'italic',
   },
   iceBreakersContainer: {
     paddingVertical: Spacing.sm,

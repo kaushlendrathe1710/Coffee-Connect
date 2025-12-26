@@ -39,7 +39,18 @@ interface Profile {
   interests: string[];
   role: 'host' | 'guest';
   verified: boolean;
+  rating?: number;
+  ratingCount?: number;
+  hostRate?: number;
   location: { latitude: number; longitude: number } | null;
+}
+
+interface Filters {
+  minAge: number;
+  maxAge: number;
+  maxDistance: number;
+  interests: string[];
+  availabilityDays: string[];
 }
 
 interface MatchResult {
@@ -59,8 +70,11 @@ export default function DiscoverScreen() {
   const queryClient = useQueryClient();
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [showMatchModal, setShowMatchModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
   const [matchedUser, setMatchedUser] = useState<{ name: string; photo: string } | null>(null);
+  const [filters, setFilters] = useState<Filters>({ minAge: 18, maxAge: 99, maxDistance: 50, interests: [], availabilityDays: [] });
   const translateX = useRef(new Animated.Value(0)).current;
   const matchScale = useRef(new Animated.Value(0)).current;
 
@@ -135,6 +149,7 @@ export default function DiscoverScreen() {
       });
 
       // Move to next profile
+      setCurrentPhotoIndex(0); // Reset photo index for new profile
       if (currentIndex < profiles.length - 1) {
         setCurrentIndex((prev) => prev + 1);
       } else {
@@ -238,6 +253,12 @@ export default function DiscoverScreen() {
           />
           <ThemedText style={styles.logoText}>Coffee Date</ThemedText>
         </View>
+        <Pressable
+          style={[styles.filterButton, { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => setShowFilterModal(true)}
+        >
+          <Feather name="sliders" size={20} color={theme.text} />
+        </Pressable>
       </View>
 
       <View style={styles.cardContainer}>
@@ -255,10 +276,45 @@ export default function DiscoverScreen() {
           >
             <View style={styles.imageContainer}>
               <Image
-                source={{ uri: currentProfile.photos[0] }}
+                source={{ uri: currentProfile.photos[currentPhotoIndex] || currentProfile.photos[0] }}
                 style={styles.cardImage}
                 contentFit="cover"
               />
+              {/* Photo navigation tap zones */}
+              <View style={styles.photoTapZones}>
+                <Pressable 
+                  style={styles.photoTapLeft} 
+                  onPress={() => {
+                    if (currentPhotoIndex > 0) {
+                      setCurrentPhotoIndex(currentPhotoIndex - 1);
+                      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                  }}
+                />
+                <Pressable 
+                  style={styles.photoTapRight} 
+                  onPress={() => {
+                    if (currentPhotoIndex < (currentProfile.photos?.length || 1) - 1) {
+                      setCurrentPhotoIndex(currentPhotoIndex + 1);
+                      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                  }}
+                />
+              </View>
+              {/* Photo dots indicator */}
+              {currentProfile.photos?.length > 1 ? (
+                <View style={styles.photoDots}>
+                  {currentProfile.photos.map((_, idx) => (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.photoDot,
+                        { backgroundColor: idx === currentPhotoIndex ? '#FFFFFF' : 'rgba(255,255,255,0.5)' }
+                      ]}
+                    />
+                  ))}
+                </View>
+              ) : null}
               <View style={styles.cardOverlay}>
                 <Animated.View style={[styles.stamp, styles.likeStamp, { opacity: likeOpacity }]}>
                   <ThemedText style={[styles.stampText, { color: Colors.light.success }]}>LIKE</ThemedText>
@@ -423,6 +479,13 @@ const styles = StyleSheet.create({
   logoText: {
     ...Typography.h3,
   },
+  filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   cardContainer: {
     flex: 1,
     alignItems: 'center',
@@ -441,6 +504,32 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
+  },
+  photoTapZones: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    zIndex: 10,
+  },
+  photoTapLeft: {
+    flex: 1,
+  },
+  photoTapRight: {
+    flex: 1,
+  },
+  photoDots: {
+    position: 'absolute',
+    top: Spacing.md,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    zIndex: 20,
+  },
+  photoDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   cardOverlay: {
     ...StyleSheet.absoluteFillObject,

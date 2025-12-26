@@ -1384,6 +1384,415 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== BLOCK/REPORT ROUTES ====================
+
+  // Block a user
+  app.post("/api/users/:userId/block", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { blockedId } = req.body;
+
+      if (!blockedId) {
+        return res.status(400).json({ error: "blockedId is required" });
+      }
+
+      const blocked = await storage.blockUser(userId, blockedId);
+      res.json({ success: true, blocked });
+    } catch (error) {
+      console.error("Error blocking user:", error);
+      res.status(500).json({ error: "Failed to block user" });
+    }
+  });
+
+  // Unblock a user
+  app.delete("/api/users/:userId/block/:blockedId", async (req: Request, res: Response) => {
+    try {
+      const { userId, blockedId } = req.params;
+
+      await storage.unblockUser(userId, blockedId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error unblocking user:", error);
+      res.status(500).json({ error: "Failed to unblock user" });
+    }
+  });
+
+  // Get blocked users
+  app.get("/api/users/:userId/blocked", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const blockedUsers = await storage.getBlockedUsers(userId);
+      const enrichedBlocked = await Promise.all(
+        blockedUsers.map(async (b) => {
+          const user = await storage.getUser(b.blockedId);
+          return {
+            id: b.id,
+            blockedUser: user ? { id: user.id, name: user.name, photos: user.photos } : null,
+            createdAt: b.createdAt,
+          };
+        })
+      );
+
+      res.json({ blockedUsers: enrichedBlocked });
+    } catch (error) {
+      console.error("Error getting blocked users:", error);
+      res.status(500).json({ error: "Failed to get blocked users" });
+    }
+  });
+
+  // Report a user
+  app.post("/api/reports", async (req: Request, res: Response) => {
+    try {
+      const { reporterId, reportedId, reason, description } = req.body;
+
+      if (!reporterId || !reportedId || !reason) {
+        return res.status(400).json({ error: "reporterId, reportedId, and reason are required" });
+      }
+
+      const validReasons = ['inappropriate', 'harassment', 'fake_profile', 'spam', 'other'];
+      if (!validReasons.includes(reason)) {
+        return res.status(400).json({ error: "Invalid reason" });
+      }
+
+      const report = await storage.createReport({ reporterId, reportedId, reason, description });
+      res.json({ success: true, report });
+    } catch (error) {
+      console.error("Error creating report:", error);
+      res.status(500).json({ error: "Failed to create report" });
+    }
+  });
+
+  // Admin: Get all reports
+  app.get("/api/admin/reports", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const reports = await storage.getAllReports();
+      const enrichedReports = await Promise.all(
+        reports.map(async (r) => {
+          const reporter = await storage.getUser(r.reporterId);
+          const reported = await storage.getUser(r.reportedId);
+          return {
+            id: r.id,
+            reporter: reporter ? { id: reporter.id, name: reporter.name, email: reporter.email } : null,
+            reported: reported ? { id: reported.id, name: reported.name, email: reported.email } : null,
+            reason: r.reason,
+            description: r.description,
+            status: r.status,
+            adminNotes: r.adminNotes,
+            createdAt: r.createdAt,
+          };
+        })
+      );
+      res.json({ reports: enrichedReports });
+    } catch (error) {
+      console.error("Error getting reports:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Update report status
+  app.patch("/api/admin/reports/:reportId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { reportId } = req.params;
+      const { status, adminNotes } = req.body;
+
+      const updated = await storage.updateReport(reportId, { status, adminNotes });
+      if (!updated) {
+        return res.status(404).json({ error: "Report not found" });
+      }
+      res.json({ success: true, report: updated });
+    } catch (error) {
+      console.error("Error updating report:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== REVIEW ROUTES ====================
+
+  // Create a review for a completed date
+  app.post("/api/reviews", async (req: Request, res: Response) => {
+    try {
+      const { coffeeDateId, reviewerId, reviewedId, rating, comment } = req.body;
+
+      if (!coffeeDateId || !reviewerId || !reviewedId || rating === undefined) {
+        return res.status(400).json({ error: "coffeeDateId, reviewerId, reviewedId, and rating are required" });
+      }
+
+      if (rating < 1 || rating > 5) {
+        return res.status(400).json({ error: "Rating must be between 1 and 5" });
+      }
+
+      // Check if date exists and is completed
+      const coffeeDate = await storage.getCoffeeDate(coffeeDateId);
+      if (!coffeeDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      if (coffeeDate.status !== 'completed' && coffeeDate.status !== 'confirmed') {
+        return res.status(400).json({ error: "Can only review completed dates" });
+      }
+
+      // Check if already reviewed
+      const existingReview = await storage.getReviewForDate(coffeeDateId, reviewerId);
+      if (existingReview) {
+        return res.status(400).json({ error: "You have already reviewed this date" });
+      }
+
+      const review = await storage.createReview({ coffeeDateId, reviewerId, reviewedId, rating, comment });
+      res.json({ success: true, review });
+    } catch (error) {
+      console.error("Error creating review:", error);
+      res.status(500).json({ error: "Failed to create review" });
+    }
+  });
+
+  // Get reviews for a user
+  app.get("/api/users/:userId/reviews", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const reviews = await storage.getReviewsForUser(userId);
+      const enrichedReviews = await Promise.all(
+        reviews.map(async (r) => {
+          const reviewer = await storage.getUser(r.reviewerId);
+          return {
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment,
+            reviewer: reviewer ? { id: reviewer.id, name: reviewer.name, photos: reviewer.photos } : null,
+            createdAt: r.createdAt,
+          };
+        })
+      );
+
+      // Get user's average rating
+      const user = await storage.getUser(userId);
+
+      res.json({ 
+        reviews: enrichedReviews,
+        averageRating: user?.rating || null,
+        totalReviews: user?.ratingCount || 0,
+      });
+    } catch (error) {
+      console.error("Error getting reviews:", error);
+      res.status(500).json({ error: "Failed to get reviews" });
+    }
+  });
+
+  // ==================== DISCOVERY FILTERS ROUTES ====================
+
+  // Get user's discovery filters
+  app.get("/api/filters/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const filters = await storage.getUserFilters(userId);
+      res.json({ filters: filters || { minAge: 18, maxAge: 99, maxDistance: 50, interests: [], availabilityDays: [] } });
+    } catch (error) {
+      console.error("Error getting filters:", error);
+      res.status(500).json({ error: "Failed to get filters" });
+    }
+  });
+
+  // Save/update user's discovery filters
+  app.post("/api/filters/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { minAge, maxAge, maxDistance, interests, availabilityDays } = req.body;
+
+      const filters = await storage.saveUserFilters({
+        userId,
+        minAge,
+        maxAge,
+        maxDistance,
+        interests,
+        availabilityDays,
+      });
+
+      res.json({ success: true, filters });
+    } catch (error) {
+      console.error("Error saving filters:", error);
+      res.status(500).json({ error: "Failed to save filters" });
+    }
+  });
+
+  // Get filtered discovery profiles
+  app.get("/api/discover-filtered/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.role) {
+        return res.status(404).json({ error: "User not found or role not set" });
+      }
+
+      const filters = await storage.getUserFilters(userId);
+      const profiles = await storage.getFilteredProfiles(userId, user.role as 'host' | 'guest', filters || undefined);
+
+      res.json({
+        profiles: profiles.map((p) => ({
+          id: p.id,
+          name: p.name,
+          age: p.age,
+          bio: p.bio,
+          photos: p.photos,
+          coffeePreferences: p.coffeePreferences,
+          interests: p.interests,
+          availability: p.availability,
+          role: p.role,
+          verified: p.verified,
+          rating: p.rating,
+          ratingCount: p.ratingCount,
+          hostRate: p.hostRate,
+          location: p.locationLatitude && p.locationLongitude
+            ? { latitude: parseFloat(p.locationLatitude), longitude: parseFloat(p.locationLongitude) }
+            : null,
+        })),
+      });
+    } catch (error) {
+      console.error("Error getting filtered profiles:", error);
+      res.status(500).json({ error: "Failed to get profiles" });
+    }
+  });
+
+  // ==================== PUSH NOTIFICATION ROUTES ====================
+
+  // Register push token
+  app.post("/api/push-tokens", async (req: Request, res: Response) => {
+    try {
+      const { userId, token, platform } = req.body;
+
+      if (!userId || !token || !platform) {
+        return res.status(400).json({ error: "userId, token, and platform are required" });
+      }
+
+      const savedToken = await storage.savePushToken({ userId, token, platform });
+      res.json({ success: true, token: savedToken });
+    } catch (error) {
+      console.error("Error saving push token:", error);
+      res.status(500).json({ error: "Failed to save push token" });
+    }
+  });
+
+  // Delete push token (logout)
+  app.delete("/api/push-tokens/:token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+
+      await storage.deletePushToken(token);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting push token:", error);
+      res.status(500).json({ error: "Failed to delete push token" });
+    }
+  });
+
+  // ==================== TYPING STATUS ROUTES ====================
+
+  // Update typing status
+  app.post("/api/matches/:matchId/typing", async (req: Request, res: Response) => {
+    try {
+      const { matchId } = req.params;
+      const { userId, isTyping } = req.body;
+
+      if (!userId || isTyping === undefined) {
+        return res.status(400).json({ error: "userId and isTyping are required" });
+      }
+
+      const status = await storage.updateTypingStatus(matchId, userId, isTyping);
+      res.json({ success: true, status });
+    } catch (error) {
+      console.error("Error updating typing status:", error);
+      res.status(500).json({ error: "Failed to update typing status" });
+    }
+  });
+
+  // Get typing status for a match
+  app.get("/api/matches/:matchId/typing", async (req: Request, res: Response) => {
+    try {
+      const { matchId } = req.params;
+
+      const statuses = await storage.getTypingStatus(matchId);
+      res.json({ typingStatuses: statuses });
+    } catch (error) {
+      console.error("Error getting typing status:", error);
+      res.status(500).json({ error: "Failed to get typing status" });
+    }
+  });
+
+  // Mark messages as read with timestamp
+  app.post("/api/messages/:matchId/read", async (req: Request, res: Response) => {
+    try {
+      const { matchId } = req.params;
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ error: "userId is required" });
+      }
+
+      await storage.markMessagesAsReadWithTimestamp(matchId, userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+      res.status(500).json({ error: "Failed to mark messages as read" });
+    }
+  });
+
+  // ==================== DARK MODE ROUTE ====================
+
+  // Toggle dark mode
+  app.patch("/api/users/:userId/dark-mode", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { darkMode } = req.body;
+
+      const updated = await storage.updateUser(userId, { darkMode: !!darkMode });
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ success: true, darkMode: updated.darkMode });
+    } catch (error) {
+      console.error("Error updating dark mode:", error);
+      res.status(500).json({ error: "Failed to update dark mode setting" });
+    }
+  });
+
+  // ==================== PROFILE PREVIEW ROUTE ====================
+
+  // Get profile preview (how others see your profile)
+  app.get("/api/users/:userId/preview", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Return profile data as others would see it
+      res.json({
+        profile: {
+          id: user.id,
+          name: user.name,
+          age: user.age,
+          bio: user.bio,
+          photos: user.photos,
+          coffeePreferences: user.coffeePreferences,
+          interests: user.interests,
+          availability: user.availability,
+          role: user.role,
+          verified: user.verified,
+          rating: user.rating,
+          ratingCount: user.ratingCount,
+          hostRate: user.hostRate,
+        },
+      });
+    } catch (error) {
+      console.error("Error getting profile preview:", error);
+      res.status(500).json({ error: "Failed to get profile preview" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

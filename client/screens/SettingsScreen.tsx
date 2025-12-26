@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/contexts/AuthContext';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const SETTINGS_STORAGE_KEY = '@coffee_date_settings';
 
@@ -35,11 +36,35 @@ const defaultSettings: UserSettings = {
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
-  const { user, logout } = useAuth();
+  const { theme, isDark, setIsDark } = useTheme();
+  const { user, logout, updateUser } = useAuth();
   const navigation = useNavigation<any>();
+  const queryClient = useQueryClient();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Dark mode toggle mutation
+  const darkModeMutation = useMutation({
+    mutationFn: async (darkMode: boolean) => {
+      if (!user?.id) return;
+      const res = await apiRequest('PATCH', `/api/users/${user.id}/dark-mode`, { darkMode });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data?.user) {
+        updateUser(data.user);
+      }
+    },
+  });
+
+  const handleDarkModeToggle = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const newDarkMode = !isDark;
+    setIsDark(newDarkMode);
+    darkModeMutation.mutate(newDarkMode);
+  };
 
   useEffect(() => {
     loadSettings();
@@ -142,7 +167,16 @@ export default function SettingsScreen() {
   type LinkItem = { icon: string; label: string; type: 'link'; onPress: () => void };
   type SettingItem = ToggleItem | LinkItem;
 
-  const settingsSections: { title: string; items: SettingItem[] }[] = [
+  type DarkModeItem = { icon: string; label: string; type: 'darkMode' };
+  type ExtendedSettingItem = ToggleItem | LinkItem | DarkModeItem;
+
+  const settingsSections: { title: string; items: ExtendedSettingItem[] }[] = [
+    {
+      title: 'Appearance',
+      items: [
+        { icon: 'moon', label: 'Dark Mode', type: 'darkMode' },
+      ],
+    },
     {
       title: 'Notifications',
       items: [
@@ -183,6 +217,7 @@ export default function SettingsScreen() {
             <View style={[styles.sectionContent, { backgroundColor: theme.cardBackground }, Shadows.small]}>
               {section.items.map((item, index) => {
                 const isToggle = item.type === 'toggle';
+                const isDarkModeToggle = item.type === 'darkMode';
                 return (
                   <Pressable
                     key={item.label}
@@ -190,8 +225,8 @@ export default function SettingsScreen() {
                       styles.settingItem,
                       index > 0 && { borderTopWidth: 1, borderTopColor: theme.border },
                     ]}
-                    onPress={isToggle ? undefined : (item as LinkItem).onPress}
-                    disabled={isToggle}
+                    onPress={isToggle || isDarkModeToggle ? undefined : (item as LinkItem).onPress}
+                    disabled={isToggle || isDarkModeToggle}
                   >
                     <View style={styles.settingLeft}>
                       <View style={[styles.settingIcon, { backgroundColor: theme.backgroundSecondary }]}>
@@ -199,7 +234,14 @@ export default function SettingsScreen() {
                       </View>
                       <ThemedText style={styles.settingLabel}>{item.label}</ThemedText>
                     </View>
-                    {isToggle ? (
+                    {isDarkModeToggle ? (
+                      <Switch
+                        value={isDark}
+                        onValueChange={handleDarkModeToggle}
+                        trackColor={{ false: theme.border, true: theme.primary }}
+                        thumbColor="#FFFFFF"
+                      />
+                    ) : isToggle ? (
                       <Switch
                         value={settings[(item as ToggleItem).key]}
                         onValueChange={() => handleToggle((item as ToggleItem).key)}

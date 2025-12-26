@@ -12,12 +12,14 @@ import { queryClient } from "@/lib/query-client";
 import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
           <SafeAreaProvider>
             <GestureHandlerRootView style={styles.root}>
               <KeyboardProvider>
@@ -28,8 +30,9 @@ export default function App() {
               </KeyboardProvider>
             </GestureHandlerRootView>
           </SafeAreaProvider>
-        </QueryClientProvider>
-      </AuthProvider>
+          </QueryClientProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

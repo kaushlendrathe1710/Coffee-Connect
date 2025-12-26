@@ -6,6 +6,12 @@ import {
   messages,
   coffeeDates,
   walletTransactions,
+  blockedUsers,
+  userReports,
+  reviews,
+  pushTokens,
+  typingStatus,
+  userFilters,
   type User, 
   type InsertUser, 
   type OtpCode, 
@@ -19,10 +25,21 @@ import {
   type CoffeeDate,
   type InsertCoffeeDate,
   type WalletTransaction,
-  type InsertWalletTransaction
+  type InsertWalletTransaction,
+  type BlockedUser,
+  type InsertBlockedUser,
+  type UserReport,
+  type InsertUserReport,
+  type Review,
+  type InsertReview,
+  type PushToken,
+  type InsertPushToken,
+  type TypingStatus,
+  type UserFilters,
+  type InsertUserFilters
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql, gte } from "drizzle-orm";
+import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql, gte, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -70,6 +87,39 @@ export interface IStorage {
   createWalletTransaction(transaction: InsertWalletTransaction): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   getAffordableHosts(userId: string, walletBalance: number): Promise<User[]>;
+
+  // Block/Report
+  blockUser(blockerId: string, blockedId: string): Promise<BlockedUser>;
+  unblockUser(blockerId: string, blockedId: string): Promise<void>;
+  getBlockedUsers(userId: string): Promise<BlockedUser[]>;
+  isBlocked(blockerId: string, blockedId: string): Promise<boolean>;
+  createReport(report: InsertUserReport): Promise<UserReport>;
+  getReportsForUser(userId: string): Promise<UserReport[]>;
+  getAllReports(): Promise<UserReport[]>;
+  updateReport(id: string, updates: Partial<UserReport>): Promise<UserReport | undefined>;
+
+  // Reviews
+  createReview(review: InsertReview): Promise<Review>;
+  getReviewsForUser(userId: string): Promise<Review[]>;
+  getReviewForDate(coffeeDateId: string, reviewerId: string): Promise<Review | undefined>;
+  updateUserRating(userId: string): Promise<void>;
+
+  // Push Notifications
+  savePushToken(token: InsertPushToken): Promise<PushToken>;
+  getPushTokensForUser(userId: string): Promise<PushToken[]>;
+  deletePushToken(token: string): Promise<void>;
+
+  // Typing Status
+  updateTypingStatus(matchId: string, userId: string, isTyping: boolean): Promise<TypingStatus>;
+  getTypingStatus(matchId: string): Promise<TypingStatus[]>;
+
+  // User Filters
+  getUserFilters(userId: string): Promise<UserFilters | undefined>;
+  saveUserFilters(filters: InsertUserFilters): Promise<UserFilters>;
+  updateUserFilters(userId: string, updates: Partial<UserFilters>): Promise<UserFilters | undefined>;
+
+  // Discovery with filters
+  getFilteredProfiles(userId: string, userRole: 'host' | 'guest', filters?: UserFilters): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -529,6 +579,341 @@ export class DatabaseStorage implements IStorage {
       totalMessages: allMessages.length,
       totalRevenue,
     };
+  }
+
+  // ==================== BLOCK/REPORT METHODS ====================
+
+  async blockUser(blockerId: string, blockedId: string): Promise<BlockedUser> {
+    const [blocked] = await db
+      .insert(blockedUsers)
+      .values({ blockerId, blockedId })
+      .returning();
+    
+    // Also update any matches to blocked status
+    await db
+      .update(matches)
+      .set({ status: 'blocked', updatedAt: new Date() })
+      .where(
+        or(
+          and(eq(matches.user1Id, blockerId), eq(matches.user2Id, blockedId)),
+          and(eq(matches.user1Id, blockedId), eq(matches.user2Id, blockerId))
+        )
+      );
+    
+    return blocked;
+  }
+
+  async unblockUser(blockerId: string, blockedId: string): Promise<void> {
+    await db
+      .delete(blockedUsers)
+      .where(
+        and(
+          eq(blockedUsers.blockerId, blockerId),
+          eq(blockedUsers.blockedId, blockedId)
+        )
+      );
+  }
+
+  async getBlockedUsers(userId: string): Promise<BlockedUser[]> {
+    return await db
+      .select()
+      .from(blockedUsers)
+      .where(eq(blockedUsers.blockerId, userId))
+      .orderBy(desc(blockedUsers.createdAt));
+  }
+
+  async isBlocked(blockerId: string, blockedId: string): Promise<boolean> {
+    const [blocked] = await db
+      .select()
+      .from(blockedUsers)
+      .where(
+        and(
+          eq(blockedUsers.blockerId, blockerId),
+          eq(blockedUsers.blockedId, blockedId)
+        )
+      );
+    return !!blocked;
+  }
+
+  async createReport(report: InsertUserReport): Promise<UserReport> {
+    const [newReport] = await db
+      .insert(userReports)
+      .values({
+        reporterId: report.reporterId,
+        reportedId: report.reportedId,
+        reason: report.reason as 'inappropriate' | 'harassment' | 'fake_profile' | 'spam' | 'other',
+        description: report.description ?? undefined,
+      })
+      .returning();
+    return newReport;
+  }
+
+  async getReportsForUser(userId: string): Promise<UserReport[]> {
+    return await db
+      .select()
+      .from(userReports)
+      .where(eq(userReports.reportedId, userId))
+      .orderBy(desc(userReports.createdAt));
+  }
+
+  async getAllReports(): Promise<UserReport[]> {
+    return await db
+      .select()
+      .from(userReports)
+      .orderBy(desc(userReports.createdAt));
+  }
+
+  async updateReport(id: string, updates: Partial<UserReport>): Promise<UserReport | undefined> {
+    const [report] = await db
+      .update(userReports)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userReports.id, id))
+      .returning();
+    return report || undefined;
+  }
+
+  // ==================== REVIEW METHODS ====================
+
+  async createReview(review: InsertReview): Promise<Review> {
+    const [newReview] = await db
+      .insert(reviews)
+      .values({
+        coffeeDateId: review.coffeeDateId,
+        reviewerId: review.reviewerId,
+        reviewedId: review.reviewedId,
+        rating: review.rating,
+        comment: review.comment ?? undefined,
+      })
+      .returning();
+    
+    // Update the user's average rating
+    await this.updateUserRating(review.reviewedId);
+    
+    return newReview;
+  }
+
+  async getReviewsForUser(userId: string): Promise<Review[]> {
+    return await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.reviewedId, userId))
+      .orderBy(desc(reviews.createdAt));
+  }
+
+  async getReviewForDate(coffeeDateId: string, reviewerId: string): Promise<Review | undefined> {
+    const [review] = await db
+      .select()
+      .from(reviews)
+      .where(
+        and(
+          eq(reviews.coffeeDateId, coffeeDateId),
+          eq(reviews.reviewerId, reviewerId)
+        )
+      );
+    return review || undefined;
+  }
+
+  async updateUserRating(userId: string): Promise<void> {
+    const userReviews = await this.getReviewsForUser(userId);
+    if (userReviews.length === 0) return;
+    
+    const totalRating = userReviews.reduce((sum, r) => sum + r.rating, 0);
+    const avgRating = totalRating / userReviews.length;
+    
+    await db
+      .update(users)
+      .set({ 
+        rating: avgRating, 
+        ratingCount: userReviews.length,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId));
+  }
+
+  // ==================== PUSH NOTIFICATION METHODS ====================
+
+  async savePushToken(token: InsertPushToken): Promise<PushToken> {
+    // Upsert - update if exists, insert if not
+    const existing = await db
+      .select()
+      .from(pushTokens)
+      .where(
+        and(
+          eq(pushTokens.userId, token.userId),
+          eq(pushTokens.token, token.token)
+        )
+      );
+    
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(pushTokens)
+        .set({ updatedAt: new Date() })
+        .where(eq(pushTokens.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    
+    const [newToken] = await db
+      .insert(pushTokens)
+      .values({
+        userId: token.userId,
+        token: token.token,
+        platform: token.platform as 'ios' | 'android' | 'web',
+      })
+      .returning();
+    return newToken;
+  }
+
+  async getPushTokensForUser(userId: string): Promise<PushToken[]> {
+    return await db
+      .select()
+      .from(pushTokens)
+      .where(eq(pushTokens.userId, userId));
+  }
+
+  async deletePushToken(token: string): Promise<void> {
+    await db.delete(pushTokens).where(eq(pushTokens.token, token));
+  }
+
+  // ==================== TYPING STATUS METHODS ====================
+
+  async updateTypingStatus(matchId: string, userId: string, isTyping: boolean): Promise<TypingStatus> {
+    const existing = await db
+      .select()
+      .from(typingStatus)
+      .where(
+        and(
+          eq(typingStatus.matchId, matchId),
+          eq(typingStatus.userId, userId)
+        )
+      );
+    
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(typingStatus)
+        .set({ isTyping, updatedAt: new Date() })
+        .where(eq(typingStatus.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    
+    const [newStatus] = await db
+      .insert(typingStatus)
+      .values({ matchId, userId, isTyping })
+      .returning();
+    return newStatus;
+  }
+
+  async getTypingStatus(matchId: string): Promise<TypingStatus[]> {
+    return await db
+      .select()
+      .from(typingStatus)
+      .where(eq(typingStatus.matchId, matchId));
+  }
+
+  // ==================== USER FILTERS METHODS ====================
+
+  async getUserFilters(userId: string): Promise<UserFilters | undefined> {
+    const [filters] = await db
+      .select()
+      .from(userFilters)
+      .where(eq(userFilters.userId, userId));
+    return filters || undefined;
+  }
+
+  async saveUserFilters(filters: InsertUserFilters): Promise<UserFilters> {
+    const existing = await this.getUserFilters(filters.userId);
+    
+    if (existing) {
+      return await this.updateUserFilters(filters.userId, filters) as UserFilters;
+    }
+    
+    const [newFilters] = await db
+      .insert(userFilters)
+      .values({
+        userId: filters.userId,
+        minAge: filters.minAge ?? 18,
+        maxAge: filters.maxAge ?? 99,
+        maxDistance: filters.maxDistance ?? 50,
+        interests: filters.interests ?? [],
+        availabilityDays: filters.availabilityDays ?? [],
+      })
+      .returning();
+    return newFilters;
+  }
+
+  async updateUserFilters(userId: string, updates: Partial<UserFilters>): Promise<UserFilters | undefined> {
+    const [filters] = await db
+      .update(userFilters)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userFilters.userId, userId))
+      .returning();
+    return filters || undefined;
+  }
+
+  // ==================== FILTERED DISCOVERY ====================
+
+  async getFilteredProfiles(userId: string, userRole: 'host' | 'guest', filters?: UserFilters): Promise<User[]> {
+    // Get IDs of users already swiped on
+    const swipedUsers = await db
+      .select({ swipedId: swipes.swipedId })
+      .from(swipes)
+      .where(eq(swipes.swiperId, userId));
+
+    const swipedIds = swipedUsers.map(s => s.swipedId);
+    
+    // Get blocked user IDs
+    const blockedByMe = await db
+      .select({ blockedId: blockedUsers.blockedId })
+      .from(blockedUsers)
+      .where(eq(blockedUsers.blockerId, userId));
+    
+    const blockedMe = await db
+      .select({ blockerId: blockedUsers.blockerId })
+      .from(blockedUsers)
+      .where(eq(blockedUsers.blockedId, userId));
+    
+    const blockedIds = [
+      ...blockedByMe.map(b => b.blockedId),
+      ...blockedMe.map(b => b.blockerId)
+    ];
+    
+    const excludeIds = [...swipedIds, ...blockedIds, userId];
+    
+    // Guests see Hosts, Hosts see Guests
+    const targetRole = userRole === 'guest' ? 'host' : 'guest';
+
+    // Build the query with filters
+    let query = db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.role, targetRole),
+          eq(users.onboardingCompleted, true),
+          excludeIds.length > 0 ? notInArray(users.id, excludeIds) : undefined,
+          // Age filters
+          filters?.minAge ? gte(sql`CAST(${users.age} AS INTEGER)`, filters.minAge) : undefined,
+          filters?.maxAge ? sql`CAST(${users.age} AS INTEGER) <= ${filters.maxAge}` : undefined
+        )
+      )
+      .limit(20);
+
+    return await query;
+  }
+
+  // Mark messages as read with timestamp
+  async markMessagesAsReadWithTimestamp(matchId: string, userId: string): Promise<void> {
+    await db
+      .update(messages)
+      .set({ read: true, readAt: new Date() })
+      .where(
+        and(
+          eq(messages.matchId, matchId),
+          ne(messages.senderId, userId),
+          eq(messages.read, false)
+        )
+      );
   }
 }
 

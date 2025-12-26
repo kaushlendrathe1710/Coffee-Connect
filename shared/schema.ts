@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, jsonb, integer, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,6 +25,9 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   walletBalance: integer("wallet_balance").default(0),
   hostRate: integer("host_rate"),
+  rating: real("rating"),
+  ratingCount: integer("rating_count").default(0),
+  darkMode: boolean("dark_mode").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -72,6 +75,7 @@ export const messages = pgTable("messages", {
   senderId: varchar("sender_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   read: boolean("read").default(false),
+  readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -168,6 +172,117 @@ export const insertWalletTransactionSchema = createInsertSchema(walletTransactio
   stripeSessionId: true,
 });
 
+// Blocked users table - tracks who blocked whom
+export const blockedUsers = pgTable("blocked_users", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  blockerId: varchar("blocker_id").notNull().references(() => users.id),
+  blockedId: varchar("blocked_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User reports table - stores user reports for moderation
+export const userReports = pgTable("user_reports", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  reporterId: varchar("reporter_id").notNull().references(() => users.id),
+  reportedId: varchar("reported_id").notNull().references(() => users.id),
+  reason: text("reason").$type<'inappropriate' | 'harassment' | 'fake_profile' | 'spam' | 'other'>().notNull(),
+  description: text("description"),
+  status: text("status").$type<'pending' | 'reviewed' | 'resolved' | 'dismissed'>().default('pending'),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Reviews table - host ratings after coffee dates
+export const reviews = pgTable("reviews", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  coffeeDateId: varchar("coffee_date_id").notNull().references(() => coffeeDates.id),
+  reviewerId: varchar("reviewer_id").notNull().references(() => users.id),
+  reviewedId: varchar("reviewed_id").notNull().references(() => users.id),
+  rating: integer("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Push tokens table - stores device push notification tokens
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  token: text("token").notNull(),
+  platform: text("platform").$type<'ios' | 'android' | 'web'>().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Typing status table - tracks who is currently typing
+export const typingStatus = pgTable("typing_status", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  matchId: varchar("match_id").notNull().references(() => matches.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  isTyping: boolean("is_typing").default(false),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User filters table - stores discovery preferences
+export const userFilters = pgTable("user_filters", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  minAge: integer("min_age").default(18),
+  maxAge: integer("max_age").default(99),
+  maxDistance: integer("max_distance").default(50),
+  interests: jsonb("interests").$type<string[]>().default([]),
+  availabilityDays: jsonb("availability_days").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertBlockedUserSchema = createInsertSchema(blockedUsers).pick({
+  blockerId: true,
+  blockedId: true,
+});
+
+export const insertUserReportSchema = createInsertSchema(userReports).pick({
+  reporterId: true,
+  reportedId: true,
+  reason: true,
+  description: true,
+});
+
+export const insertReviewSchema = createInsertSchema(reviews).pick({
+  coffeeDateId: true,
+  reviewerId: true,
+  reviewedId: true,
+  rating: true,
+  comment: true,
+});
+
+export const insertPushTokenSchema = createInsertSchema(pushTokens).pick({
+  userId: true,
+  token: true,
+  platform: true,
+});
+
+export const insertUserFiltersSchema = createInsertSchema(userFilters).pick({
+  userId: true,
+  minAge: true,
+  maxAge: true,
+  maxDistance: true,
+  interests: true,
+  availabilityDays: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOtp = z.infer<typeof insertOtpSchema>;
@@ -182,3 +297,14 @@ export type InsertCoffeeDate = z.infer<typeof insertCoffeeDateSchema>;
 export type CoffeeDate = typeof coffeeDates.$inferSelect;
 export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type BlockedUser = typeof blockedUsers.$inferSelect;
+export type InsertBlockedUser = z.infer<typeof insertBlockedUserSchema>;
+export type UserReport = typeof userReports.$inferSelect;
+export type InsertUserReport = z.infer<typeof insertUserReportSchema>;
+export type Review = typeof reviews.$inferSelect;
+export type InsertReview = z.infer<typeof insertReviewSchema>;
+export type PushToken = typeof pushTokens.$inferSelect;
+export type InsertPushToken = z.infer<typeof insertPushTokenSchema>;
+export type TypingStatus = typeof typingStatus.$inferSelect;
+export type UserFilters = typeof userFilters.$inferSelect;
+export type InsertUserFilters = z.infer<typeof insertUserFiltersSchema>;

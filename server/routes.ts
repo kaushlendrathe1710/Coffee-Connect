@@ -168,6 +168,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           verified: user.verified,
           onboardingCompleted: user.onboardingCompleted,
           createdAt: user.createdAt,
+          walletBalance: user.walletBalance || 0,
+          hostRate: user.hostRate || 0,
         },
         isNewUser: !user.onboardingCompleted,
       });
@@ -214,6 +216,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           verified: user.verified,
           onboardingCompleted: user.onboardingCompleted,
           createdAt: user.createdAt,
+          walletBalance: user.walletBalance || 0,
+          hostRate: user.hostRate || 0,
         },
       });
     } catch (error) {
@@ -387,6 +391,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               photos: otherUser.photos,
               bio: otherUser.bio,
               coffeePreferences: otherUser.coffeePreferences,
+              role: otherUser.role,
+              hostRate: otherUser.hostRate || 0,
             } : null,
             lastMessage: lastMessage ? {
               content: lastMessage.content,
@@ -677,6 +683,254 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating coffee date:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== WALLET ROUTES ====================
+
+  // Get wallet balance and transaction history
+  app.get("/api/wallet/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const transactions = await storage.getWalletTransactions(userId);
+      
+      res.json({
+        balance: user.walletBalance || 0,
+        transactions,
+      });
+    } catch (error) {
+      console.error("Error getting wallet:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create wallet top-up checkout session
+  app.post("/api/wallet/top-up", async (req: Request, res: Response) => {
+    try {
+      const { userId, amount } = req.body;
+
+      if (!userId || !amount) {
+        return res.status(400).json({ error: "userId and amount are required" });
+      }
+
+      // Amount is in INR paise (100 paise = 1 INR)
+      const amountInPaise = parseInt(amount);
+      if (isNaN(amountInPaise) || amountInPaise < 100) {
+        return res.status(400).json({ error: "Minimum amount is 100 paise (1 INR)" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== 'guest') {
+        return res.status(400).json({ error: "Only guests can top up wallet" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+
+      // Create or get Stripe customer
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.name || undefined,
+          metadata: { userId: user.id },
+        });
+        await storage.updateUser(user.id, { stripeCustomerId: customer.id });
+        customerId = customer.id;
+      }
+
+      // Get the base URL for success/cancel redirects
+      const domain = process.env.REPLIT_DOMAINS?.split(',')[0] || process.env.REPLIT_DEV_DOMAIN;
+      if (!domain) {
+        return res.status(500).json({ error: "Server configuration error: no domain available" });
+      }
+      const baseUrl = `https://${domain}`;
+
+      // Create checkout session for wallet top-up
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'inr',
+              product_data: {
+                name: 'Wallet Top-Up',
+                description: `Add ${(amountInPaise / 100).toFixed(0)} INR to your Coffee Date wallet`,
+              },
+              unit_amount: amountInPaise,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${baseUrl}/wallet-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/wallet-cancel`,
+        metadata: {
+          userId,
+          type: 'wallet_topup',
+          amount: amountInPaise.toString(),
+        },
+      });
+
+      res.json({ sessionId: session.id, url: session.url });
+    } catch (error) {
+      console.error("Error creating wallet top-up session:", error);
+      res.status(500).json({ error: "Failed to create payment session" });
+    }
+  });
+
+  // Confirm wallet top-up (called after redirect)
+  app.post("/api/wallet/confirm-topup", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, userId } = req.body;
+
+      if (!sessionId || !userId) {
+        return res.status(400).json({ error: "sessionId and userId are required" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      // Verify this session belongs to this user
+      if (session.metadata?.userId !== userId) {
+        return res.status(403).json({ error: "Session does not belong to this user" });
+      }
+
+      if (session.metadata?.type !== 'wallet_topup') {
+        return res.status(400).json({ error: "Invalid session type" });
+      }
+
+      if (session.payment_status !== 'paid') {
+        return res.json({ success: false, status: session.payment_status });
+      }
+
+      const amount = parseInt(session.metadata?.amount || '0');
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Check if this session was already processed
+      const existingTransactions = await storage.getWalletTransactions(userId);
+      const alreadyProcessed = existingTransactions.some(t => t.stripeSessionId === sessionId);
+      
+      if (alreadyProcessed) {
+        return res.json({ success: true, balance: user.walletBalance });
+      }
+
+      // Credit the wallet
+      const newBalance = (user.walletBalance || 0) + amount;
+      await storage.updateWalletBalance(userId, newBalance);
+
+      // Record the transaction
+      await storage.createWalletTransaction({
+        userId,
+        amount,
+        type: 'credit',
+        source: 'stripe',
+        description: `Wallet top-up of ${(amount / 100).toFixed(0)} INR`,
+        stripeSessionId: sessionId,
+      });
+
+      res.json({ success: true, balance: newBalance });
+    } catch (error) {
+      console.error("Error confirming wallet top-up:", error);
+      res.status(500).json({ error: "Failed to confirm payment" });
+    }
+  });
+
+  // Host confirms date is set - charges guest's wallet
+  app.post("/api/wallet/charge-for-date", async (req: Request, res: Response) => {
+    try {
+      const { dateId, hostId } = req.body;
+
+      if (!dateId || !hostId) {
+        return res.status(400).json({ error: "dateId and hostId are required" });
+      }
+
+      const coffeeDate = await storage.getCoffeeDate(dateId);
+      if (!coffeeDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      // Only the host can confirm the date
+      if (coffeeDate.hostId !== hostId) {
+        return res.status(403).json({ error: "Only the host can confirm the date" });
+      }
+
+      // Date must be accepted first
+      if (coffeeDate.status !== 'accepted') {
+        return res.status(400).json({ error: "Date must be accepted before confirming" });
+      }
+
+      // Already confirmed/paid
+      if (coffeeDate.paymentStatus === 'paid') {
+        return res.status(400).json({ error: "This date has already been paid for" });
+      }
+
+      const host = await storage.getUser(hostId);
+      const guest = await storage.getUser(coffeeDate.guestId);
+
+      if (!host || !guest) {
+        return res.status(404).json({ error: "Users not found" });
+      }
+
+      // Get the host's rate
+      const hostRate = host.hostRate || 0;
+      if (hostRate <= 0) {
+        return res.status(400).json({ error: "Host has not set a rate" });
+      }
+
+      // Check if guest has enough balance
+      const guestBalance = guest.walletBalance || 0;
+      if (guestBalance < hostRate) {
+        return res.status(400).json({ 
+          error: "Guest does not have enough balance",
+          required: hostRate,
+          available: guestBalance,
+        });
+      }
+
+      // Deduct from guest's wallet
+      const newGuestBalance = guestBalance - hostRate;
+      await storage.updateWalletBalance(guest.id, newGuestBalance);
+
+      // Record the transaction
+      await storage.createWalletTransaction({
+        userId: guest.id,
+        amount: hostRate,
+        type: 'debit',
+        source: 'date_fee',
+        description: `Coffee date with ${host.name}`,
+        relatedDateId: dateId,
+      });
+
+      // Update the coffee date status
+      await storage.updateCoffeeDate(dateId, {
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        paymentAmount: hostRate,
+      });
+
+      res.json({ 
+        success: true, 
+        newGuestBalance,
+        amountCharged: hostRate,
+      });
+    } catch (error) {
+      console.error("Error charging for date:", error);
+      res.status(500).json({ error: "Failed to process payment" });
     }
   });
 

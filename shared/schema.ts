@@ -22,6 +22,8 @@ export const users = pgTable("users", {
   verified: boolean("verified").default(false),
   onboardingCompleted: boolean("onboarding_completed").default(false),
   stripeCustomerId: text("stripe_customer_id"),
+  walletBalance: integer("wallet_balance").default(0),
+  hostRate: integer("host_rate"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -69,6 +71,21 @@ export const messages = pgTable("messages", {
   senderId: varchar("sender_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Wallet transactions table - tracks all wallet credits and debits
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  amount: integer("amount").notNull(),
+  type: text("type").$type<'credit' | 'debit'>().notNull(),
+  source: text("source").$type<'stripe' | 'date_fee' | 'refund' | 'adjustment'>().notNull(),
+  description: text("description"),
+  relatedDateId: varchar("related_date_id"),
+  stripeSessionId: text("stripe_session_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -138,6 +155,16 @@ export const insertCoffeeDateSchema = createInsertSchema(coffeeDates).pick({
   notes: true,
 });
 
+export const insertWalletTransactionSchema = createInsertSchema(walletTransactions).pick({
+  userId: true,
+  amount: true,
+  type: true,
+  source: true,
+  description: true,
+  relatedDateId: true,
+  stripeSessionId: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOtp = z.infer<typeof insertOtpSchema>;
@@ -150,3 +177,5 @@ export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertCoffeeDate = z.infer<typeof insertCoffeeDateSchema>;
 export type CoffeeDate = typeof coffeeDates.$inferSelect;
+export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;

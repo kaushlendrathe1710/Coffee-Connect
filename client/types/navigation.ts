@@ -12,6 +12,7 @@ export type RootStackParamList = {
   EditProfile: undefined;
   Settings: undefined;
   Filters: undefined;
+  Wallet: undefined;
 };
 
 export type AuthStackParamList = {

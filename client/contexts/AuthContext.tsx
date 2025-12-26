@@ -18,6 +18,8 @@ export interface UserProfile {
   location?: { latitude: number; longitude: number };
   verified: boolean;
   createdAt: string;
+  walletBalance?: number;
+  hostRate?: number;
 }
 
 interface AuthContextType {

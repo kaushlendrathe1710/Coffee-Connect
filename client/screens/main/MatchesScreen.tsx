@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, StyleSheet, Pressable, Platform, FlatList, ActivityIndicator } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, StyleSheet, Pressable, Platform, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -28,6 +28,8 @@ interface MatchData {
     photos: string[];
     bio: string;
     coffeePreferences: string[];
+    role?: 'host' | 'guest';
+    hostRate?: number;
   } | null;
   lastMessage: {
     content: string;
@@ -47,16 +49,53 @@ export default function MatchesScreen() {
   const { data: matchesData, isLoading, refetch } = useQuery<{ matches: MatchData[] }>({
     queryKey: ['/api/matches', user?.id],
     enabled: !!user?.id,
-    refetchInterval: 10000, // Refresh every 10 seconds
+    refetchInterval: 10000,
   });
 
+  const { data: walletData, refetch: refetchWallet } = useQuery<{ balance: number }>({
+    queryKey: ['/api/wallet', user?.id],
+    enabled: !!user?.id && user?.role === 'guest',
+    refetchInterval: 10000,
+    staleTime: 0,
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.role === 'guest') {
+        refetchWallet();
+      }
+      refetch();
+    }, [refetchWallet, refetch, user?.role])
+  );
+
+  const currentWalletBalance = walletData?.balance ?? user?.walletBalance ?? 0;
   const matches = matchesData?.matches || [];
+
+  const canAffordHost = (match: MatchData): boolean => {
+    if (user?.role !== 'guest') return true;
+    if (match.otherUser?.role !== 'host') return true;
+    const hostRate = match.otherUser?.hostRate || 0;
+    return currentWalletBalance >= hostRate;
+  };
 
   const handleMatchPress = (match: MatchData) => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     if (match.otherUser) {
+      if (!canAffordHost(match)) {
+        const hostRate = match.otherUser.hostRate || 0;
+        const needed = hostRate - currentWalletBalance;
+        Alert.alert(
+          'Insufficient Funds',
+          `You need ${(needed / 100).toFixed(0)} more INR to chat with ${match.otherUser.name}. Would you like to add funds?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Add Funds', onPress: () => navigation.navigate('Wallet') },
+          ]
+        );
+        return;
+      }
       navigation.navigate('Chat', {
         matchId: match.id,
         matchName: match.otherUser.name,
@@ -83,6 +122,9 @@ export default function MatchesScreen() {
 
   const renderNewMatch = ({ item }: { item: MatchData }) => {
     if (!item.otherUser) return null;
+    const affordable = canAffordHost(item);
+    const hostRate = item.otherUser.hostRate || 0;
+    const isHost = item.otherUser.role === 'host';
     
     return (
       <Pressable
@@ -92,19 +134,32 @@ export default function MatchesScreen() {
         <View style={[styles.newMatchImageContainer, Shadows.small]}>
           <Image 
             source={{ uri: item.otherUser.photos?.[0] || 'https://via.placeholder.com/72' }} 
-            style={styles.newMatchImage} 
+            style={[styles.newMatchImage, !affordable && styles.lockedImage]} 
             contentFit="cover" 
           />
+          {!affordable ? (
+            <View style={[styles.newMatchLockBadge, { backgroundColor: theme.warning }]}>
+              <Feather name="lock" size={10} color="#FFFFFF" />
+            </View>
+          ) : null}
         </View>
         <ThemedText style={styles.newMatchName} numberOfLines={1}>
           {item.otherUser.name}
         </ThemedText>
+        {isHost && user?.role === 'guest' && hostRate > 0 ? (
+          <ThemedText style={[styles.newMatchRate, { color: affordable ? theme.success : theme.warning }]}>
+            {(hostRate / 100).toFixed(0)} INR
+          </ThemedText>
+        ) : null}
       </Pressable>
     );
   };
 
   const renderConversation = ({ item }: { item: MatchData }) => {
     if (!item.otherUser) return null;
+    const affordable = canAffordHost(item);
+    const hostRate = item.otherUser.hostRate || 0;
+    const isHost = item.otherUser.role === 'host';
 
     return (
       <Pressable
@@ -118,10 +173,14 @@ export default function MatchesScreen() {
         <View style={styles.conversationImageContainer}>
           <Image 
             source={{ uri: item.otherUser.photos?.[0] || 'https://via.placeholder.com/56' }} 
-            style={styles.conversationImage} 
+            style={[styles.conversationImage, !affordable && styles.lockedImage]} 
             contentFit="cover" 
           />
-          {item.unreadCount > 0 ? (
+          {!affordable ? (
+            <View style={[styles.lockBadge, { backgroundColor: theme.warning }]}>
+              <Feather name="lock" size={12} color="#FFFFFF" />
+            </View>
+          ) : item.unreadCount > 0 ? (
             <View style={[styles.unreadBadge, { backgroundColor: theme.primary }]}>
               <ThemedText style={[styles.unreadText, { color: theme.buttonText }]}>
                 {item.unreadCount}
@@ -131,7 +190,16 @@ export default function MatchesScreen() {
         </View>
         <View style={styles.conversationContent}>
           <View style={styles.conversationHeader}>
-            <ThemedText style={styles.conversationName}>{item.otherUser.name}</ThemedText>
+            <View style={styles.nameRow}>
+              <ThemedText style={styles.conversationName}>{item.otherUser.name}</ThemedText>
+              {isHost && user?.role === 'guest' && hostRate > 0 ? (
+                <View style={[styles.rateBadge, { backgroundColor: affordable ? theme.success + '20' : theme.warning + '20' }]}>
+                  <ThemedText style={[styles.rateText, { color: affordable ? theme.success : theme.warning }]}>
+                    {(hostRate / 100).toFixed(0)} INR
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
             {item.lastMessage?.createdAt ? (
               <ThemedText style={[styles.conversationTime, { color: theme.textSecondary }]}>
                 {formatTime(item.lastMessage.createdAt)}
@@ -145,10 +213,10 @@ export default function MatchesScreen() {
             ]}
             numberOfLines={1}
           >
-            {item.lastMessage?.senderId === user?.id ? 'You: ' : ''}{item.lastMessage?.content}
+            {!affordable ? 'Add funds to chat' : item.lastMessage?.senderId === user?.id ? 'You: ' : ''}{affordable ? item.lastMessage?.content : ''}
           </ThemedText>
         </View>
-        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        <Feather name={affordable ? "chevron-right" : "credit-card"} size={20} color={affordable ? theme.textSecondary : theme.primary} />
       </Pressable>
     );
   };
@@ -296,6 +364,21 @@ const styles = StyleSheet.create({
     ...Typography.small,
     fontWeight: '500',
   },
+  newMatchLockBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  newMatchRate: {
+    ...Typography.caption,
+    fontWeight: '600',
+    fontSize: 10,
+  },
   conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -392,5 +475,34 @@ const styles = StyleSheet.create({
   },
   tipText: {
     ...Typography.body,
+  },
+  lockedImage: {
+    opacity: 0.6,
+  },
+  lockBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    flex: 1,
+  },
+  rateBadge: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+  },
+  rateText: {
+    ...Typography.caption,
+    fontWeight: '600',
+    fontSize: 10,
   },
 });

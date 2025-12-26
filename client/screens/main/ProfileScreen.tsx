@@ -1,12 +1,13 @@
-import React from 'react';
-import { View, StyleSheet, Pressable, Platform, ScrollView, Alert } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, StyleSheet, Pressable, Platform, ScrollView, Alert, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -14,6 +15,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,7 +24,56 @@ export default function ProfileScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
+  const queryClient = useQueryClient();
+  const [editingRate, setEditingRate] = React.useState(false);
+  const [rateInput, setRateInput] = React.useState('');
+
+  // Fetch wallet data for guests
+  const { data: walletData, refetch: refetchWallet } = useQuery<{ balance: number; transactions: any[] }>({
+    queryKey: ['/api/wallet', user?.id],
+    enabled: !!user?.id && user?.role === 'guest',
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.role === 'guest') {
+        refetchWallet();
+      }
+    }, [refetchWallet, user?.role])
+  );
+
+  // Update host rate mutation
+  const updateRateMutation = useMutation({
+    mutationFn: async (newRate: number) => {
+      const response = await apiRequest('PUT', `/api/users/${user?.id}`, { hostRate: newRate });
+      if (!response.ok) throw new Error('Failed to update rate');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.user) {
+        updateUser(data.user);
+      }
+      setEditingRate(false);
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    },
+    onError: () => {
+      Alert.alert('Error', 'Failed to update rate');
+    },
+  });
+
+  const handleSaveRate = () => {
+    const rate = parseInt(rateInput) * 100; // Convert to paise
+    if (isNaN(rate) || rate < 100) {
+      Alert.alert('Invalid Rate', 'Please enter a valid rate (minimum 1 INR)');
+      return;
+    }
+    updateRateMutation.mutate(rate);
+  };
 
   const handleEditProfile = () => {
     if (Platform.OS !== 'web') {
@@ -125,6 +176,90 @@ export default function ProfileScreen() {
             <ThemedText style={[styles.bio, { color: theme.textSecondary }]}>{user.bio}</ThemedText>
           )}
         </View>
+
+        {/* Guest Wallet Section */}
+        {user?.role === 'guest' && (
+          <View style={[styles.walletCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+            <View style={styles.walletHeader}>
+              <Feather name="credit-card" size={20} color={theme.primary} />
+              <ThemedText style={styles.walletTitle}>Wallet Balance</ThemedText>
+            </View>
+            <ThemedText style={[styles.walletBalance, { color: theme.primary }]}>
+              {((walletData?.balance || user.walletBalance || 0) / 100).toFixed(0)} INR
+            </ThemedText>
+            <Pressable
+              style={({ pressed }) => [
+                styles.addFundsButton,
+                { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
+              ]}
+              onPress={() => navigation.navigate('Wallet' as any)}
+            >
+              <Feather name="plus" size={16} color={theme.buttonText} />
+              <ThemedText style={[styles.addFundsText, { color: theme.buttonText }]}>Add Funds</ThemedText>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Host Rate Section */}
+        {user?.role === 'host' && (
+          <View style={[styles.rateCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+            <View style={styles.rateHeader}>
+              <View style={styles.rateHeaderLeft}>
+                <Feather name="dollar-sign" size={20} color={theme.primary} />
+                <ThemedText style={styles.rateTitle}>Your Rate per Date</ThemedText>
+              </View>
+              {!editingRate && (
+                <Pressable
+                  onPress={() => {
+                    setRateInput(((user.hostRate || 0) / 100).toString());
+                    setEditingRate(true);
+                  }}
+                >
+                  <Feather name="edit-2" size={18} color={theme.primary} />
+                </Pressable>
+              )}
+            </View>
+            {editingRate ? (
+              <View style={styles.rateEditContainer}>
+                <View style={styles.rateInputWrapper}>
+                  <TextInput
+                    style={[styles.rateInput, { color: theme.text, borderColor: theme.border }]}
+                    value={rateInput}
+                    onChangeText={setRateInput}
+                    keyboardType="numeric"
+                    placeholder="Enter rate"
+                    placeholderTextColor={theme.textSecondary}
+                  />
+                  <ThemedText style={styles.rateUnit}>INR</ThemedText>
+                </View>
+                <View style={styles.rateButtons}>
+                  <Pressable
+                    style={[styles.rateCancelButton, { borderColor: theme.border }]}
+                    onPress={() => setEditingRate(false)}
+                  >
+                    <ThemedText>Cancel</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.rateSaveButton, { backgroundColor: theme.primary }]}
+                    onPress={handleSaveRate}
+                    disabled={updateRateMutation.isPending}
+                  >
+                    <ThemedText style={{ color: theme.buttonText }}>
+                      {updateRateMutation.isPending ? 'Saving...' : 'Save'}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <ThemedText style={[styles.rateValue, { color: theme.primary }]}>
+                {user.hostRate ? `${(user.hostRate / 100).toFixed(0)} INR` : 'Not set'}
+              </ThemedText>
+            )}
+            <ThemedText style={[styles.rateHint, { color: theme.textSecondary }]}>
+              Guests will be charged this amount when you confirm a date
+            </ThemedText>
+          </View>
+        )}
 
         {user?.coffeePreferences && user.coffeePreferences.length > 0 && (
           <View style={styles.section}>
@@ -320,5 +455,109 @@ const styles = StyleSheet.create({
   logoutText: {
     ...Typography.body,
     fontWeight: '600',
+  },
+  walletCard: {
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    alignItems: 'center',
+    ...Shadows.small,
+  },
+  walletHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  walletTitle: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  walletBalance: {
+    ...Typography.h1,
+    fontWeight: '700',
+    marginBottom: Spacing.md,
+  },
+  addFundsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+  },
+  addFundsText: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  rateCard: {
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    ...Shadows.small,
+  },
+  rateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  rateHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  rateTitle: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  rateValue: {
+    ...Typography.h2,
+    fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
+  rateHint: {
+    ...Typography.small,
+  },
+  rateEditContainer: {
+    gap: Spacing.md,
+  },
+  rateInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  rateInput: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    ...Typography.body,
+  },
+  rateUnit: {
+    ...Typography.body,
+    fontWeight: '600',
+  },
+  rateButtons: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  rateCancelButton: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rateSaveButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: BorderRadius.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

@@ -126,13 +126,30 @@ assets/           # Images, fonts, icons
 
 ## Recent Changes
 
+### December 2025 - Phase 5: Wallet-Based Payment System
+- **Wallet System**: Guests have a wallet balance (in INR paise). Hosts set their own rates.
+- **Database Schema**: Added `walletBalance` and `hostRate` fields to users table, created `wallet_transactions` ledger table
+- **Wallet API Endpoints**:
+  - GET /api/wallet/:userId - Returns balance and transaction history
+  - POST /api/wallet/top-up - Creates Stripe checkout session for wallet top-up (INR currency)
+  - POST /api/wallet/confirm-topup - Confirms payment after Stripe webhook
+  - POST /api/wallet/charge-for-date - Host confirms date and charges guest's wallet
+- **Chat Access Gating**: Guests can only chat with hosts whose rate is <= their wallet balance
+  - MatchesScreen shows lock icons and rate badges for unaffordable hosts
+  - Insufficient funds prompt directs to WalletScreen with amount needed
+- **WalletScreen**: Shows balance, top-up options (500/1000/2000/5000 INR), transaction history
+- **Host Rate Setting**: Hosts can set their rate per date in ProfileScreen
+- **"Date is Set" Button**: Hosts confirm dates in CalendarScreen, which charges guest's wallet
+- **State Management**: useFocusEffect ensures wallet balance refreshes when navigating between screens
+- **Auth Payload**: walletBalance and hostRate now included in verify-otp and user update responses
+
 ### December 2025 - Phase 4: Stripe Payment Integration
 - **Stripe Client**: Created stripeClient.ts with Replit connector for secure API key management
-- **Payment Flow**: Guest pays $25 for coffee dates after host accepts (75% to Host, 25% platform fee)
-- **Checkout Session**: POST /api/stripe/checkout creates Stripe checkout session for accepted dates
-- **Payment Status**: coffee_dates table tracks stripeSessionId, stripePaymentIntentId, paymentStatus
-- **CalendarScreen**: Accept/decline buttons for proposed dates, "Pay $25" button for guests on accepted dates
-- **Status Flow**: proposed → accepted (host) → paid (guest) → confirmed
+- **Payment Flow**: Now wallet-based - guests add funds, hosts set rates, wallet debited on date confirmation
+- **Checkout Session**: POST /api/wallet/top-up creates Stripe checkout session for wallet top-ups (INR)
+- **Payment Status**: coffee_dates table tracks paymentStatus ('pending', 'paid')
+- **CalendarScreen**: Accept/decline buttons for proposed dates, "Date is Set" button for hosts to confirm
+- **Status Flow**: proposed → accepted (host) → confirmed (host clicks "Date is Set", wallet charged)
 
 ### December 2025 - Phase 3: Cafe Map Integration
 - **CafeMapScreen**: Map view with nearby cafes (mock data for MVP), location permission handling, cafe selection UI

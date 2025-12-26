@@ -197,6 +197,51 @@ export default function CalendarScreen() {
     checkoutMutation.mutate(dateId);
   };
 
+  // Host confirms date and charges guest's wallet
+  const confirmDateMutation = useMutation({
+    mutationFn: async (dateId: string) => {
+      const response = await apiRequest('POST', '/api/wallet/charge-for-date', { 
+        dateId, 
+        hostId: user?.id 
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to confirm date');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/coffee-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      Alert.alert('Success', 'Date confirmed! The guest has been charged.');
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message || 'Failed to confirm date');
+    },
+  });
+
+  const handleConfirmDate = (date: CoffeeDateData) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    const hostRate = user?.hostRate || 0;
+    Alert.alert(
+      'Confirm Date',
+      `This will charge the guest ${(hostRate / 100).toFixed(0)} INR from their wallet. Continue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Confirm & Charge', 
+          onPress: () => confirmDateMutation.mutate(date.id),
+        },
+      ]
+    );
+  };
+
   const renderDateCard = (date: CoffeeDateData) => {
     const otherUser = getOtherUser(date);
     if (!otherUser) return null;
@@ -273,17 +318,17 @@ export default function CalendarScreen() {
             </View>
           )}
           
-          {/* Guest needs to pay after host accepts */}
-          {date.status === 'accepted' && user?.role === 'guest' && date.paymentStatus !== 'paid' && (
+          {/* Host can confirm date and charge guest */}
+          {date.status === 'accepted' && user?.role === 'host' && date.paymentStatus !== 'paid' && (
             <View style={styles.actionButtons}>
               <Pressable
-                style={[styles.actionButton, styles.payButton, { backgroundColor: theme.primary }]}
-                onPress={() => handlePay(date.id)}
-                disabled={checkoutMutation.isPending}
+                style={[styles.actionButton, styles.payButton, { backgroundColor: theme.success }]}
+                onPress={() => handleConfirmDate(date)}
+                disabled={confirmDateMutation.isPending}
               >
-                <Feather name="credit-card" size={16} color="#FFFFFF" />
+                <Feather name="check-circle" size={16} color="#FFFFFF" />
                 <ThemedText style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
-                  {checkoutMutation.isPending ? 'Processing...' : 'Pay $25'}
+                  {confirmDateMutation.isPending ? 'Processing...' : 'Date is Set'}
                 </ThemedText>
               </Pressable>
             </View>

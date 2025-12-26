@@ -5,6 +5,7 @@ import {
   matches, 
   messages,
   coffeeDates,
+  walletTransactions,
   type User, 
   type InsertUser, 
   type OtpCode, 
@@ -16,7 +17,9 @@ import {
   type Message,
   type InsertMessage,
   type CoffeeDate,
-  type InsertCoffeeDate
+  type InsertCoffeeDate,
+  type WalletTransaction,
+  type InsertWalletTransaction
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gt, lt, or, ne, notInArray, desc, asc, sql, gte } from "drizzle-orm";
@@ -60,6 +63,13 @@ export interface IStorage {
   getUpcomingCoffeeDatesForUser(userId: string): Promise<CoffeeDate[]>;
   getCoffeeDatesForMatch(matchId: string): Promise<CoffeeDate[]>;
   updateCoffeeDate(id: string, updates: Partial<CoffeeDate>): Promise<CoffeeDate | undefined>;
+
+  // Wallet
+  getWalletBalance(userId: string): Promise<number>;
+  updateWalletBalance(userId: string, newBalance: number): Promise<User | undefined>;
+  createWalletTransaction(transaction: InsertWalletTransaction): Promise<WalletTransaction>;
+  getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
+  getAffordableHosts(userId: string, walletBalance: number): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -341,6 +351,70 @@ export class DatabaseStorage implements IStorage {
       .where(eq(coffeeDates.id, id))
       .returning();
     return date || undefined;
+  }
+
+  // Wallet methods
+  async getWalletBalance(userId: string): Promise<number> {
+    const user = await this.getUser(userId);
+    return user?.walletBalance || 0;
+  }
+
+  async updateWalletBalance(userId: string, newBalance: number): Promise<User | undefined> {
+    return await this.updateUser(userId, { walletBalance: newBalance });
+  }
+
+  async createWalletTransaction(transaction: InsertWalletTransaction): Promise<WalletTransaction> {
+    const [newTransaction] = await db
+      .insert(walletTransactions)
+      .values({
+        userId: transaction.userId,
+        amount: transaction.amount,
+        type: transaction.type as 'credit' | 'debit',
+        source: transaction.source as 'stripe' | 'date_fee' | 'refund' | 'adjustment',
+        description: transaction.description ?? undefined,
+        relatedDateId: transaction.relatedDateId ?? undefined,
+        stripeSessionId: transaction.stripeSessionId ?? undefined,
+      })
+      .returning();
+    return newTransaction;
+  }
+
+  async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
+    return await db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.userId, userId))
+      .orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async getAffordableHosts(userId: string, walletBalance: number): Promise<User[]> {
+    // Get IDs of users already swiped on
+    const swipedUsers = await db
+      .select({ swipedId: swipes.swipedId })
+      .from(swipes)
+      .where(eq(swipes.swiperId, userId));
+
+    const swipedIds = swipedUsers.map(s => s.swipedId);
+
+    // Get hosts whose rate is <= wallet balance (or have no rate set)
+    let query = db
+      .select()
+      .from(users)
+      .where(
+        and(
+          ne(users.id, userId),
+          eq(users.role, 'host'),
+          eq(users.onboardingCompleted, true),
+          or(
+            sql`${users.hostRate} IS NULL`,
+            sql`${users.hostRate} <= ${walletBalance}`
+          ),
+          swipedIds.length > 0 ? notInArray(users.id, swipedIds) : undefined
+        )
+      )
+      .limit(20);
+
+    return await query;
   }
 }
 

@@ -15,6 +15,7 @@ import UserProfileScreen from '@/screens/UserProfileScreen';
 import EditProfileScreen from '@/screens/EditProfileScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import FiltersScreen from '@/screens/FiltersScreen';
+import WalletScreen from '@/screens/WalletScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -97,6 +98,13 @@ export default function RootStackNavigator() {
             options={{
               presentation: 'modal',
               headerTitle: 'Filters',
+            }}
+          />
+          <Stack.Screen
+            name="Wallet"
+            component={WalletScreen}
+            options={{
+              headerTitle: 'My Wallet',
             }}
           />
         </>

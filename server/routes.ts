@@ -1142,6 +1142,206 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== ADMIN ROUTES ====================
+
+  // Protected super admin email
+  const SUPER_ADMIN_EMAIL = 'kaushlendra.k12@fms.edu';
+
+  // Initialize super admin on server start
+  (async () => {
+    try {
+      await storage.createOrGetProtectedAdmin(SUPER_ADMIN_EMAIL, 'Super Admin');
+      console.log('Super admin initialized:', SUPER_ADMIN_EMAIL);
+    } catch (error) {
+      console.error('Failed to initialize super admin:', error);
+    }
+  })();
+
+  // Middleware to check if user is admin
+  const requireAdmin = async (req: Request, res: Response, next: Function) => {
+    const adminId = req.headers['x-admin-id'] as string;
+    if (!adminId) {
+      return res.status(401).json({ error: 'Admin authentication required' });
+    }
+    const admin = await storage.getUser(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    (req as any).admin = admin;
+    next();
+  };
+
+  // Get platform stats
+  app.get("/api/admin/stats", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const stats = await storage.getPlatformStats();
+      res.json({ stats });
+    } catch (error) {
+      console.error("Error getting admin stats:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all users
+  app.get("/api/admin/users", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      res.json({
+        users: allUsers.map(u => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          age: u.age,
+          role: u.role,
+          verified: u.verified,
+          isProtected: u.isProtected,
+          walletBalance: u.walletBalance,
+          hostRate: u.hostRate,
+          createdAt: u.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error getting all users:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all matches
+  app.get("/api/admin/matches", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const allMatches = await storage.getAllMatches();
+      const enrichedMatches = await Promise.all(
+        allMatches.map(async (match) => {
+          const user1 = await storage.getUser(match.user1Id);
+          const user2 = await storage.getUser(match.user2Id);
+          return {
+            id: match.id,
+            user1: user1 ? { id: user1.id, name: user1.name, email: user1.email } : null,
+            user2: user2 ? { id: user2.id, name: user2.name, email: user2.email } : null,
+            status: match.status,
+            createdAt: match.createdAt,
+          };
+        })
+      );
+      res.json({ matches: enrichedMatches });
+    } catch (error) {
+      console.error("Error getting all matches:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all coffee dates
+  app.get("/api/admin/dates", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const allDates = await storage.getAllCoffeeDates();
+      const enrichedDates = await Promise.all(
+        allDates.map(async (date) => {
+          const host = await storage.getUser(date.hostId);
+          const guest = await storage.getUser(date.guestId);
+          return {
+            id: date.id,
+            host: host ? { id: host.id, name: host.name, email: host.email } : null,
+            guest: guest ? { id: guest.id, name: guest.name, email: guest.email } : null,
+            scheduledDate: date.scheduledDate,
+            cafeName: date.cafeName,
+            status: date.status,
+            paymentStatus: date.paymentStatus,
+            paymentAmount: date.paymentAmount,
+            createdAt: date.createdAt,
+          };
+        })
+      );
+      res.json({ dates: enrichedDates });
+    } catch (error) {
+      console.error("Error getting all dates:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all transactions
+  app.get("/api/admin/transactions", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const allTransactions = await storage.getAllWalletTransactions();
+      const enrichedTransactions = await Promise.all(
+        allTransactions.map(async (t) => {
+          const user = await storage.getUser(t.userId);
+          return {
+            id: t.id,
+            user: user ? { id: user.id, name: user.name, email: user.email } : null,
+            amount: t.amount,
+            type: t.type,
+            source: t.source,
+            description: t.description,
+            createdAt: t.createdAt,
+          };
+        })
+      );
+      res.json({ transactions: enrichedTransactions });
+    } catch (error) {
+      console.error("Error getting all transactions:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete a user (protected users cannot be deleted)
+  app.delete("/api/admin/users/:userId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const deleted = await storage.deleteUser(userId);
+      if (!deleted) {
+        return res.status(400).json({ error: "Cannot delete this user (protected or not found)" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update user role
+  app.patch("/api/admin/users/:userId/role", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { role } = req.body;
+
+      if (!['host', 'guest', 'admin'].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isProtected && role !== 'admin') {
+        return res.status(400).json({ error: "Cannot change role of protected admin" });
+      }
+
+      const updated = await storage.updateUser(userId, { role });
+      res.json({ success: true, user: updated });
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Verify/unverify user
+  app.patch("/api/admin/users/:userId/verify", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { verified } = req.body;
+
+      const updated = await storage.updateUser(userId, { verified: !!verified });
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ success: true, user: updated });
+    } catch (error) {
+      console.error("Error updating user verification:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

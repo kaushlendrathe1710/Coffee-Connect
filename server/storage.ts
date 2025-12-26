@@ -416,6 +416,120 @@ export class DatabaseStorage implements IStorage {
 
     return await query;
   }
+
+  // ==================== ADMIN METHODS ====================
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async getAllMatches(): Promise<Match[]> {
+    return await db.select().from(matches).orderBy(desc(matches.createdAt));
+  }
+
+  async getAllCoffeeDates(): Promise<CoffeeDate[]> {
+    return await db.select().from(coffeeDates).orderBy(desc(coffeeDates.createdAt));
+  }
+
+  async getAllWalletTransactions(): Promise<WalletTransaction[]> {
+    return await db.select().from(walletTransactions).orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async getAllMessages(): Promise<Message[]> {
+    return await db.select().from(messages).orderBy(desc(messages.createdAt));
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const user = await this.getUser(id);
+    if (!user || user.isProtected) {
+      return false;
+    }
+    await db.delete(users).where(eq(users.id, id));
+    return true;
+  }
+
+  async getProtectedAdmin(email: string): Promise<User | undefined> {
+    const [admin] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.email, email.toLowerCase()),
+          eq(users.role, 'admin'),
+          eq(users.isProtected, true)
+        )
+      );
+    return admin || undefined;
+  }
+
+  async createOrGetProtectedAdmin(email: string, name: string): Promise<User> {
+    const existing = await this.getUserByEmail(email);
+    if (existing) {
+      // Update to admin if not already
+      if (existing.role !== 'admin' || !existing.isProtected) {
+        const [updated] = await db
+          .update(users)
+          .set({ 
+            role: 'admin', 
+            isProtected: true, 
+            name: name,
+            onboardingCompleted: true,
+            verified: true,
+            updatedAt: new Date() 
+          })
+          .where(eq(users.id, existing.id))
+          .returning();
+        return updated;
+      }
+      return existing;
+    }
+    
+    // Create new admin
+    const [admin] = await db
+      .insert(users)
+      .values({
+        email: email.toLowerCase(),
+        name: name,
+        role: 'admin',
+        isProtected: true,
+        onboardingCompleted: true,
+        verified: true,
+      })
+      .returning();
+    return admin;
+  }
+
+  async getPlatformStats(): Promise<{
+    totalUsers: number;
+    totalHosts: number;
+    totalGuests: number;
+    totalAdmins: number;
+    totalMatches: number;
+    totalDates: number;
+    totalMessages: number;
+    totalRevenue: number;
+  }> {
+    const allUsers = await db.select().from(users);
+    const allMatches = await db.select().from(matches);
+    const allDates = await db.select().from(coffeeDates);
+    const allMessages = await db.select().from(messages);
+    const allTransactions = await db.select().from(walletTransactions);
+
+    const totalRevenue = allTransactions
+      .filter(t => t.type === 'debit' && t.source === 'date_fee')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    return {
+      totalUsers: allUsers.length,
+      totalHosts: allUsers.filter(u => u.role === 'host').length,
+      totalGuests: allUsers.filter(u => u.role === 'guest').length,
+      totalAdmins: allUsers.filter(u => u.role === 'admin').length,
+      totalMatches: allMatches.length,
+      totalDates: allDates.length,
+      totalMessages: allMessages.length,
+      totalRevenue,
+    };
+  }
 }
 
 export const storage = new DatabaseStorage();

@@ -126,6 +126,11 @@ assets/           # Images, fonts, icons
 
 ## Recent Changes
 
+### December 2025 - Phase 3: Cafe Map Integration
+- **CafeMapScreen**: Map view with nearby cafes (mock data for MVP), location permission handling, cafe selection UI
+- **Navigation Pattern**: Uses replace navigation with state preservation - passes date/time/notes through CafeMap round-trip to prevent data loss
+- **DatePlanningScreen Integration**: "Choose a Cafe" button navigates to map, returns with selected cafe while preserving all other form state
+
 ### December 2025 - Phase 2: Calendar & Date Planning
 - **Database Schema**: Added `coffee_dates` table with fields for scheduling, cafe location, payment tracking, and status
 - **Coffee Dates API**:

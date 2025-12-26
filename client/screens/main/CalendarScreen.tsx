@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Pressable, Platform, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, StyleSheet, Pressable, Platform, ScrollView, ActivityIndicator, RefreshControl, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Spacing, BorderRadius, Typography, Shadows } from '@/constants/theme';
 import { RootStackParamList } from '@/types/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -129,6 +130,73 @@ export default function CalendarScreen() {
     return user?.role === 'host' ? date.guest : date.host;
   };
 
+  const queryClient = useQueryClient();
+
+  const acceptDateMutation = useMutation({
+    mutationFn: async ({ dateId, status }: { dateId: string; status: string }) => {
+      return apiRequest('PATCH', `/api/coffee-dates/${dateId}`, { status, userId: user?.id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/coffee-dates'] });
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    },
+  });
+
+  const checkoutMutation = useMutation({
+    mutationFn: async (dateId: string) => {
+      const response = await apiRequest('POST', '/api/stripe/checkout', { dateId, userId: user?.id });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create payment session');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.url) {
+        Linking.openURL(data.url);
+      } else {
+        Alert.alert('Error', 'No payment URL received');
+      }
+    },
+    onError: (error: any) => {
+      Alert.alert('Payment Error', error.message || 'Failed to start payment');
+    },
+  });
+
+  const handleAccept = (dateId: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    acceptDateMutation.mutate({ dateId, status: 'accepted' });
+  };
+
+  const handleDecline = (dateId: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Alert.alert(
+      'Decline Date?',
+      'Are you sure you want to decline this coffee date?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Decline', 
+          style: 'destructive',
+          onPress: () => acceptDateMutation.mutate({ dateId, status: 'declined' }),
+        },
+      ]
+    );
+  };
+
+  const handlePay = (dateId: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    checkoutMutation.mutate(dateId);
+  };
+
   const renderDateCard = (date: CoffeeDateData) => {
     const otherUser = getOtherUser(date);
     if (!otherUser) return null;
@@ -184,6 +252,48 @@ export default function CalendarScreen() {
               <ThemedText style={[styles.cafeName, { color: theme.textSecondary }]} numberOfLines={1}>
                 Cafe to be decided
               </ThemedText>
+            </View>
+          )}
+          
+          {/* Action buttons based on status and user role */}
+          {date.status === 'proposed' && date.proposedBy !== user?.id && (
+            <View style={styles.actionButtons}>
+              <Pressable
+                style={[styles.actionButton, styles.declineButton, { borderColor: theme.error }]}
+                onPress={() => handleDecline(date.id)}
+              >
+                <ThemedText style={[styles.actionButtonText, { color: theme.error }]}>Decline</ThemedText>
+              </Pressable>
+              <Pressable
+                style={[styles.actionButton, styles.acceptButton, { backgroundColor: theme.success }]}
+                onPress={() => handleAccept(date.id)}
+              >
+                <ThemedText style={[styles.actionButtonText, { color: '#FFFFFF' }]}>Accept</ThemedText>
+              </Pressable>
+            </View>
+          )}
+          
+          {/* Guest needs to pay after host accepts */}
+          {date.status === 'accepted' && user?.role === 'guest' && date.paymentStatus !== 'paid' && (
+            <View style={styles.actionButtons}>
+              <Pressable
+                style={[styles.actionButton, styles.payButton, { backgroundColor: theme.primary }]}
+                onPress={() => handlePay(date.id)}
+                disabled={checkoutMutation.isPending}
+              >
+                <Feather name="credit-card" size={16} color="#FFFFFF" />
+                <ThemedText style={[styles.actionButtonText, { color: '#FFFFFF' }]}>
+                  {checkoutMutation.isPending ? 'Processing...' : 'Pay $25'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          )}
+          
+          {/* Payment status indicator */}
+          {date.paymentStatus === 'paid' && (
+            <View style={[styles.paymentBadge, { backgroundColor: theme.success + '20' }]}>
+              <Feather name="check-circle" size={14} color={theme.success} />
+              <ThemedText style={[styles.paymentBadgeText, { color: theme.success }]}>Paid</ThemedText>
             </View>
           )}
         </View>
@@ -390,5 +500,45 @@ const styles = StyleSheet.create({
     ...Typography.body,
     textAlign: 'center',
     marginTop: Spacing.md,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    gap: Spacing.xs,
+  },
+  declineButton: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  acceptButton: {},
+  payButton: {
+    flex: 1,
+  },
+  actionButtonText: {
+    ...Typography.small,
+    fontWeight: '600',
+  },
+  paymentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  paymentBadgeText: {
+    ...Typography.caption,
+    fontWeight: '600',
   },
 });

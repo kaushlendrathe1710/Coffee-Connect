@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   locationLongitude: text("location_longitude"),
   verified: boolean("verified").default(false),
   onboardingCompleted: boolean("onboarding_completed").default(false),
+  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -88,6 +89,8 @@ export const coffeeDates = pgTable("coffee_dates", {
   status: text("status").$type<'proposed' | 'accepted' | 'declined' | 'confirmed' | 'completed' | 'cancelled'>().default('proposed'),
   paymentStatus: text("payment_status").$type<'pending' | 'paid' | 'refunded'>().default('pending'),
   paymentAmount: integer("payment_amount"),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  stripeSessionId: text("stripe_session_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

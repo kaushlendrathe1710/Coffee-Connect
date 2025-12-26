@@ -126,6 +126,14 @@ assets/           # Images, fonts, icons
 
 ## Recent Changes
 
+### December 2025 - Phase 4: Stripe Payment Integration
+- **Stripe Client**: Created stripeClient.ts with Replit connector for secure API key management
+- **Payment Flow**: Guest pays $25 for coffee dates after host accepts (75% to Host, 25% platform fee)
+- **Checkout Session**: POST /api/stripe/checkout creates Stripe checkout session for accepted dates
+- **Payment Status**: coffee_dates table tracks stripeSessionId, stripePaymentIntentId, paymentStatus
+- **CalendarScreen**: Accept/decline buttons for proposed dates, "Pay $25" button for guests on accepted dates
+- **Status Flow**: proposed → accepted (host) → paid (guest) → confirmed
+
 ### December 2025 - Phase 3: Cafe Map Integration
 - **CafeMapScreen**: Map view with nearby cafes (mock data for MVP), location permission handling, cafe selection UI
 - **Navigation Pattern**: Uses replace navigation with state preservation - passes date/time/notes through CafeMap round-trip to prevent data loss

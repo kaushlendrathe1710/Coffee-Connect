@@ -2,6 +2,12 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { sendOTPEmail, generateOTP } from "./services/email";
+import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
+
+// Coffee date price in cents ($25)
+const COFFEE_DATE_PRICE = 2500;
+// Platform fee percentage (25%)
+const PLATFORM_FEE_PERCENT = 25;
 
 const otpSendAttempts = new Map<string, { count: number; resetAt: number }>();
 const otpVerifyAttempts = new Map<string, { count: number; resetAt: number; lockoutUntil?: number }>();
@@ -671,6 +677,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating coffee date:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== STRIPE PAYMENT ROUTES ====================
+
+  // Get Stripe publishable key
+  app.get("/api/stripe/config", async (req: Request, res: Response) => {
+    try {
+      const publishableKey = await getStripePublishableKey();
+      res.json({ publishableKey, datePrice: COFFEE_DATE_PRICE });
+    } catch (error) {
+      console.error("Error getting Stripe config:", error);
+      res.status(500).json({ error: "Failed to get payment configuration" });
+    }
+  });
+
+  // Create checkout session for a coffee date
+  app.post("/api/stripe/checkout", async (req: Request, res: Response) => {
+    try {
+      const { dateId, userId } = req.body;
+
+      if (!dateId || !userId) {
+        return res.status(400).json({ error: "dateId and userId are required" });
+      }
+
+      const coffeeDate = await storage.getCoffeeDate(dateId);
+      if (!coffeeDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      // Only the guest can pay for the date
+      if (coffeeDate.guestId !== userId) {
+        return res.status(403).json({ error: "Only the guest can pay for the coffee date" });
+      }
+
+      // Date must be accepted before payment
+      if (coffeeDate.status !== 'accepted') {
+        return res.status(400).json({ error: "Date must be accepted before payment" });
+      }
+
+      // Already paid
+      if (coffeeDate.paymentStatus === 'paid') {
+        return res.status(400).json({ error: "This date has already been paid for" });
+      }
+
+      const guest = await storage.getUser(coffeeDate.guestId);
+      const host = await storage.getUser(coffeeDate.hostId);
+
+      if (!guest || !host) {
+        return res.status(404).json({ error: "Users not found" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+
+      // Create or get Stripe customer for guest
+      let customerId = guest.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: guest.email,
+          name: guest.name || undefined,
+          metadata: { userId: guest.id },
+        });
+        await storage.updateUser(guest.id, { stripeCustomerId: customer.id });
+        customerId = customer.id;
+      }
+
+      // Get the base URL for success/cancel redirects
+      const domain = process.env.REPLIT_DOMAINS?.split(',')[0] || process.env.REPLIT_DEV_DOMAIN;
+      if (!domain) {
+        return res.status(500).json({ error: "Server configuration error: no domain available" });
+      }
+      const baseUrl = `https://${domain}`;
+
+      // Create checkout session
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `Coffee Date with ${host.name}`,
+                description: coffeeDate.cafeName 
+                  ? `${coffeeDate.cafeName} on ${new Date(coffeeDate.scheduledDate).toLocaleDateString()}`
+                  : `Scheduled for ${new Date(coffeeDate.scheduledDate).toLocaleDateString()}`,
+              },
+              unit_amount: COFFEE_DATE_PRICE,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${baseUrl}/payment-success?dateId=${dateId}`,
+        cancel_url: `${baseUrl}/payment-cancel?dateId=${dateId}`,
+        metadata: {
+          dateId,
+          guestId: coffeeDate.guestId,
+          hostId: coffeeDate.hostId,
+        },
+      });
+
+      // Store the session ID on the coffee date
+      await storage.updateCoffeeDate(dateId, { 
+        stripeSessionId: session.id,
+        paymentAmount: COFFEE_DATE_PRICE,
+      });
+
+      res.json({ sessionId: session.id, url: session.url });
+    } catch (error) {
+      console.error("Error creating checkout session:", error);
+      res.status(500).json({ error: "Failed to create payment session" });
+    }
+  });
+
+  // Confirm payment was successful (called after redirect)
+  app.post("/api/stripe/confirm-payment", async (req: Request, res: Response) => {
+    try {
+      const { dateId, userId } = req.body;
+
+      if (!dateId || !userId) {
+        return res.status(400).json({ error: "dateId and userId are required" });
+      }
+
+      const coffeeDate = await storage.getCoffeeDate(dateId);
+      if (!coffeeDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      // Verify user is part of this date
+      if (coffeeDate.guestId !== userId && coffeeDate.hostId !== userId) {
+        return res.status(403).json({ error: "Not authorized to confirm this payment" });
+      }
+
+      if (!coffeeDate.stripeSessionId) {
+        return res.status(400).json({ error: "No payment session found for this date" });
+      }
+
+      // Already paid - return success
+      if (coffeeDate.paymentStatus === 'paid') {
+        return res.json({ success: true, status: 'paid' });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(coffeeDate.stripeSessionId);
+
+      // Verify session metadata matches the date
+      if (session.metadata?.dateId !== dateId) {
+        return res.status(400).json({ error: "Session does not match this date" });
+      }
+
+      if (session.payment_status === 'paid') {
+        await storage.updateCoffeeDate(dateId, {
+          paymentStatus: 'paid',
+          status: 'confirmed',
+          stripePaymentIntentId: session.payment_intent as string,
+        });
+
+        res.json({ success: true, status: 'paid' });
+      } else {
+        res.json({ success: false, status: session.payment_status });
+      }
+    } catch (error) {
+      console.error("Error confirming payment:", error);
+      res.status(500).json({ error: "Failed to confirm payment" });
     }
   });
 

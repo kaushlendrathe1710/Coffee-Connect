@@ -476,6 +476,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== COFFEE DATES ROUTES ====================
+
+  // Get all coffee dates for a user
+  app.get("/api/coffee-dates/:userId", async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { upcoming } = req.query;
+      
+      const dates = upcoming === 'true' 
+        ? await storage.getUpcomingCoffeeDatesForUser(userId)
+        : await storage.getCoffeeDatesForUser(userId);
+      
+      // Enrich with user data
+      const enrichedDates = await Promise.all(
+        dates.map(async (date) => {
+          const host = await storage.getUser(date.hostId);
+          const guest = await storage.getUser(date.guestId);
+          const match = await storage.getMatch(date.matchId);
+          
+          return {
+            id: date.id,
+            matchId: date.matchId,
+            scheduledDate: date.scheduledDate,
+            cafeName: date.cafeName,
+            cafeAddress: date.cafeAddress,
+            cafeLocation: date.cafeLatitude && date.cafeLongitude ? {
+              latitude: parseFloat(date.cafeLatitude),
+              longitude: parseFloat(date.cafeLongitude),
+            } : null,
+            status: date.status,
+            paymentStatus: date.paymentStatus,
+            paymentAmount: date.paymentAmount,
+            notes: date.notes,
+            proposedBy: date.proposedBy,
+            host: host ? {
+              id: host.id,
+              name: host.name,
+              photos: host.photos,
+            } : null,
+            guest: guest ? {
+              id: guest.id,
+              name: guest.name,
+              photos: guest.photos,
+            } : null,
+            createdAt: date.createdAt,
+          };
+        })
+      );
+      
+      res.json({ dates: enrichedDates });
+    } catch (error) {
+      console.error("Error getting coffee dates:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get coffee dates for a specific match
+  app.get("/api/coffee-dates/match/:matchId", async (req: Request, res: Response) => {
+    try {
+      const { matchId } = req.params;
+      
+      const dates = await storage.getCoffeeDatesForMatch(matchId);
+      
+      res.json({
+        dates: dates.map(date => ({
+          id: date.id,
+          scheduledDate: date.scheduledDate,
+          cafeName: date.cafeName,
+          cafeAddress: date.cafeAddress,
+          status: date.status,
+          paymentStatus: date.paymentStatus,
+          proposedBy: date.proposedBy,
+          createdAt: date.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error getting coffee dates for match:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create a coffee date proposal
+  app.post("/api/coffee-dates", async (req: Request, res: Response) => {
+    try {
+      const { 
+        matchId, 
+        proposedBy, 
+        scheduledDate, 
+        cafeName, 
+        cafeAddress,
+        cafeLatitude,
+        cafeLongitude,
+        notes 
+      } = req.body;
+
+      if (!matchId || !proposedBy || !scheduledDate) {
+        return res.status(400).json({ error: "matchId, proposedBy, and scheduledDate are required" });
+      }
+
+      // Get the match to determine host and guest
+      const match = await storage.getMatch(matchId);
+      if (!match) {
+        return res.status(404).json({ error: "Match not found" });
+      }
+
+      // Verify proposer is part of this match
+      if (match.user1Id !== proposedBy && match.user2Id !== proposedBy) {
+        return res.status(403).json({ error: "Not authorized to propose a date for this match" });
+      }
+
+      // Get both users to determine roles
+      const user1 = await storage.getUser(match.user1Id);
+      const user2 = await storage.getUser(match.user2Id);
+      
+      if (!user1 || !user2) {
+        return res.status(404).json({ error: "Match users not found" });
+      }
+
+      // Determine host and guest based on roles
+      let hostId: string;
+      let guestId: string;
+      
+      if (user1.role === 'host') {
+        hostId = user1.id;
+        guestId = user2.id;
+      } else {
+        hostId = user2.id;
+        guestId = user1.id;
+      }
+
+      const coffeeDate = await storage.createCoffeeDate({
+        matchId,
+        proposedBy,
+        hostId,
+        guestId,
+        scheduledDate: new Date(scheduledDate),
+        cafeName,
+        cafeAddress,
+        cafeLatitude,
+        cafeLongitude,
+        notes,
+      });
+
+      res.json({
+        success: true,
+        date: {
+          id: coffeeDate.id,
+          matchId: coffeeDate.matchId,
+          scheduledDate: coffeeDate.scheduledDate,
+          cafeName: coffeeDate.cafeName,
+          cafeAddress: coffeeDate.cafeAddress,
+          status: coffeeDate.status,
+          createdAt: coffeeDate.createdAt,
+        },
+      });
+    } catch (error) {
+      console.error("Error creating coffee date:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update coffee date status (accept, decline, confirm, cancel)
+  app.patch("/api/coffee-dates/:dateId", async (req: Request, res: Response) => {
+    try {
+      const { dateId } = req.params;
+      const { status, userId } = req.body;
+
+      if (!status || !userId) {
+        return res.status(400).json({ error: "status and userId are required" });
+      }
+
+      const validStatuses = ['accepted', 'declined', 'confirmed', 'cancelled', 'completed'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+      }
+
+      const coffeeDate = await storage.getCoffeeDate(dateId);
+      if (!coffeeDate) {
+        return res.status(404).json({ error: "Coffee date not found" });
+      }
+
+      // Verify user is part of this date
+      if (coffeeDate.hostId !== userId && coffeeDate.guestId !== userId) {
+        return res.status(403).json({ error: "Not authorized to update this date" });
+      }
+
+      const updatedDate = await storage.updateCoffeeDate(dateId, { status });
+
+      res.json({
+        success: true,
+        date: updatedDate,
+      });
+    } catch (error) {
+      console.error("Error updating coffee date:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
